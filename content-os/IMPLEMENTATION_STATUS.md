@@ -108,3 +108,83 @@ Run these against a Supabase project after deployment:
 7. Grant `is_platform_admin` to one account → `/admin` lists workspaces and users → adjust credits → the ledger shows the adjustment.
 8. Change preferences to the light theme and confirm it persists across reloads. Change the password. Use "Sign out everywhere".
 9. *(If Meta is configured)* Connect Instagram → status shows "connected" → disconnect.
+
+---
+
+# Phase 2: Discover & Analyze
+
+_Last updated: 2026-11-24 · Branch: `claude/content-os-phase-1-xyfdxl` (session rules allow only this branch, so Phase 2 commits also land in PR #1)._
+
+**Pre-development validation.** Phase 1 had no known defects. Its open item was live verification against Supabase, which is carried forward below. Phase 2 reuses the Phase 1 auth, workspaces, RLS helpers, credit ledger, audit log, token vault and UI system; nothing was rebuilt.
+
+## Acceptance criteria
+
+| # | Criterion | Status | Evidence |
+|---|---|---|---|
+| 1 | Users can manually import references | ✅ / 🟡 | URL import (parsing, duplicate detection, accessibility check, tags, notes) and RLS are tested. The UI flow has not run against live Supabase. |
+| 2 | Users can upload supported video files | ✅ / 🟡 | Path reservation, storage policies, size and type checks, magic bytes and duplicate hashes are tested in the database and unit suites. The direct browser upload to Supabase Storage is not live-verified. |
+| 3 | Users can organize references | ✅ | Categories, tags, notes, edit, delete (blocked while analyzing), library search, filters, sort and pagination. `references.test.ts`, `discovery-providers.test.ts` |
+| 4 | Discovery search works | ✅ / 🟡 | The library provider queries real data. Multi-provider runs isolate failures; searches and results are stored with origin and retrieval date; searches can be saved. YouTube and Instagram were tested against mocked HTTP only. |
+| 5 | Automated discovery integrations documented and functional where credentials exist | 🟡 | Provider interface plus 4 providers, each documented (`docs/API_INTEGRATIONS.md`, Sources page). No YouTube or Meta credentials were available, so none is live-verified. Hashtag search is documented and correctly reported as unavailable. |
+| 6 | Videos are processed asynchronously | ✅ | Postgres job queue plus a separate worker process. Pipeline integration tests and a real `npm run worker` smoke test (see TEST_REPORT.md) |
+| 7 | Audio transcription works | 🟡 | Audio extraction is real (ffmpeg). The Whisper client is tested with mocked HTTP, and transcript persistence and alignment are tested. **No live Whisper call**; the credential request was not completed. |
+| 8 | Scene detection works | ✅ | Real ffmpeg scene detection on fixture video finds cuts at about 2s and 4s; frames are extracted and stored; boundaries are merged and capped. `pipeline.test.ts`, `analysis-modules.test.ts` |
+| 9 | AI analysis generates structured reports | 🟡 | Separate versioned prompts, Zod schemas, re-validation, timestamp checks, retry on invalid output and report persistence are all tested, with **mocked** Claude. **No live Claude call**: Anthropic keys can only be added as an environment variable (see Outstanding dependencies). |
+| 10 | Users can inspect timestamps and scenes | ✅ / 🟡 | Report page with video preview, proportional timeline, clickable scenes and transcript lines (they seek the video), and scene details. Builds and typechecks; not rendered against live data. |
+| 11 | Analysis results persist correctly | ✅ | Transcripts, segments, scenes, reports, AI invocations and job logs persist. Retries rewrite rows instead of duplicating them. `pipeline.test.ts` |
+| 12 | Workspace isolation verified | ✅ | `references.test.ts` and `analysis-jobs.test.ts`: RLS on reads and writes, cross-workspace tag and result injection, storage paths, worker-only functions |
+| 13 | Background job errors handled | ✅ | Permanent vs retryable errors, backoff, max attempts, crash recovery via heartbeat, cancellation, refunds exactly once |
+| 14 | Automated tests pass | ✅ | 306/306 (121 new in Phase 2) |
+| 15 | No critical or high-severity security issues open | ✅ | `docs/SECURITY_PLAN.md` §9. Remaining risks are medium or low, plus the live-verification gap. |
+
+**Bottom line:** every Phase 2 module is implemented, and everything that could run here was exercised against real ffmpeg and Postgres. Criteria 7 and 9 (live transcription and live Claude analysis), and the live Supabase, YouTube and Instagram behaviour, still need credentials and the checklist below before Phase 2 can be accepted.
+
+## Features implemented
+
+- **Discover dashboard:**
+  - search bar with filters (keywords, topic, niche, industry, format, category, sources) and per-source availability
+  - recently added and recently analyzed references
+  - saved searches and research history
+  - trending, shown only when the YouTube API is configured
+  - performance indicators: provider-reported counts only
+- **Search results:** grouped by origin, with retrieval date, per-provider error or unavailable notices, "Save to library", and saving the search.
+- **Manual import:** Instagram Reel/post and YouTube URL validation plus accessibility check; any other https link stored without fetching; MP4/MOV/WebM upload; title, description, category, tags and notes.
+- **Reference library:** thumbnail, title, source, URL, author, duration, category, tags, import date, analysis status and notes, with search, filters, sorting, pagination, save, remove and duplicate detection.
+- **Analysis pipeline:**
+  - input validation and ffprobe metadata
+  - audio extraction
+  - ffmpeg scene detection and representative frames
+  - Whisper transcription
+  - Claude vision on frames
+  - separate hook, narrative (storytelling, retention, CTA), editing, summary and creative prompts
+  - validated report with provenance
+- **Report screen:** video preview, metadata, transcript with timestamps, scene breakdown and timeline, the hook, storytelling, retention, CTA, editing and creative sections, and facts visibly separated from AI interpretation. Actions: notes, re-run, Markdown and JSON export, open in Discover. "Send to Script Lab" is shown disabled and marked Phase 3.
+- **Jobs:** real step-by-step progress (no invented percentages), logs, cancel, retries, idempotency, credits charged and refunded.
+
+## Not implemented (by design or blocked)
+
+- Downloading videos from Instagram or YouTube URLs: not permitted, so the user uploads the file instead.
+- Instagram hashtag search: needs Facebook Login for Business and Meta App Review.
+- Speaker diarization: not supported by `whisper-1`.
+- Upload progress percentage: supabase-js reports no byte progress, so the UI shows the phase instead.
+- Per-workspace search rate limits, Instagram token refresh, and a resumable upload protocol for large files.
+
+## Outstanding dependencies (Phase 2)
+
+| Dependency | Needed for | How |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | Analyses to complete (criterion 9) | Worker environment variable. In this cloud environment it can only be added as an environment variable in the environment settings (network secrets can't hold Anthropic keys), and a new session picks it up. |
+| `OPENAI_API_KEY` | Transcripts (criterion 7) | Worker environment variable, or a network secret for `api.openai.com` in this environment |
+| `YOUTUBE_API_KEY` | YouTube discovery and trending | Google Cloud project with YouTube Data API v3 enabled |
+| Meta app (from Phase 1) | Instagram connection and own-media discovery | See README |
+| Supabase project plus the worker deployed with ffmpeg | Everything at runtime | README → Deployment → Worker |
+
+## Phase 2 manual acceptance checklist
+
+1. Import an Instagram Reel URL and a YouTube URL. Check the accessibility status, the duplicate warning on a second import, and the tags and notes.
+2. Upload an MP4 of 30–90 seconds. The library shows it; the thumbnail appears after analysis.
+3. Run an analysis. Watch the steps advance, check that 5 credits were charged, then open the report: scenes match the visible cuts, the transcript matches the speech, and clicking a scene seeks the video.
+4. Export Markdown and JSON. Edit the notes. Re-run the analysis.
+5. Cancel a queued analysis and confirm the credits are refunded. Upload a renamed non-video file and confirm the analysis fails clearly with a refund.
+6. With YouTube configured, run a search, save a result to the library, save the search, and check Trending on the Discover page.
+7. From a second workspace, confirm none of the above is visible and that `/analyze/<id>` from the first workspace returns 404.

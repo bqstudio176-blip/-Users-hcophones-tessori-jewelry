@@ -24,6 +24,8 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: content-os/package-lock.json
+      - name: Install ffmpeg (analysis pipeline tests use real ffmpeg)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npm ci
       - run: npm run typecheck
       # Unit + DB suites. The DB suite starts a throwaway PostgreSQL cluster

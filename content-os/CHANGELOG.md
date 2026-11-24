@@ -2,6 +2,21 @@
 
 All notable changes to Content OS. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] — 2026-11-24 — Phase 2: Discover & Analyze
+
+### Added
+- **Database** (migrations 0500–0800): content references with duplicate detection (URL, provider item, file hash), tags, discovery sources, searches and results, video analyses, a Postgres job queue (`SKIP LOCKED` claims, heartbeats, retry with backoff, cancellation, idempotency), job logs, transcripts and segments, detected scenes, analysis reports, AI invocation records, and a private media bucket with path-reserved uploads. All workspace-scoped with RLS.
+- **Discover:** dashboard with multi-source search and filters, saved searches, research history, recent and analyzed references, and trending (YouTube chart when configured). Search results show origin and retrieval date. Reference library with search, filters, sorting and pagination. URL import with accessibility checks (no video downloads). Direct-to-storage video upload. Reference detail page. A Sources page documenting each provider.
+- **Discovery providers:** library, YouTube Data API v3, Instagram (connected account's media), and Instagram hashtag search (documented, unavailable), behind a pluggable `DiscoveryProvider` interface.
+- **Analyze:** background worker (`npm run worker`, `worker/Dockerfile`) running ffprobe validation, audio extraction, ffmpeg scene detection, representative frames, Whisper transcription, Claude frame analysis, and separate hook, narrative, editing, summary and creative analyses with Zod-validated structured outputs, versioned prompts and server-side refusal fallbacks. Reports record provenance (model, prompt versions, tokens, cost, processing time).
+- **Report UI:** live processing view; video preview with a scene timeline synced to the transcript; all report sections with observed facts separated from AI interpretations; notes, re-run, Markdown and JSON export; Script Lab hand-off marked as Phase 3.
+- **Credits:** 5 per analysis, refunded on failure or cancellation.
+- **Tests:** 121 new (306 total), including end-to-end pipeline tests with real ffmpeg and Postgres.
+- **Docs:** `docs/API_INTEGRATIONS.md`; Phase 2 sections in the schema, architecture, security, status and test documents.
+
+### Fixed
+- Export file names broke on accented titles.
+
 ## [0.1.0] — 2026-11-24 — Phase 1: Foundation
 
 ### Added

@@ -1,6 +1,9 @@
 # Content OS
 
-A multi-tenant SaaS for short-form content teams. **This is Phase 1, the foundation:** authentication, workspaces and roles, a dashboard, settings, the Instagram connection foundation, plans and a credit ledger, and an admin panel.
+A multi-tenant SaaS for short-form content teams.
+
+- **Phase 1 (Foundation):** authentication, workspaces and roles, dashboard, settings, Instagram connection foundation, plans and credit ledger, admin panel.
+- **Phase 2 (Discover & Analyze):** reference library, multi-source discovery, URL and video import, and a background AI video analysis engine (transcription, scene detection, structured reports).
 
 > This directory is self-contained. The repository root also holds a separate, pre-existing static site (Tessori Jewelry), which is untouched.
 
@@ -9,7 +12,7 @@ A multi-tenant SaaS for short-form content teams. **This is Phase 1, the foundat
 | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) | What is done, what is not, acceptance criteria |
 | [TEST_REPORT.md](TEST_REPORT.md) | Test inventory, results, what is *not* covered |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
-| [docs/](docs/) | Product spec, architecture, database schema, security plan (drafts awaiting approval) |
+| [docs/](docs/) | Product spec, architecture, database schema, security plan (drafts awaiting approval), [API integrations](docs/API_INTEGRATIONS.md) |
 
 ## Stack
 
@@ -17,7 +20,7 @@ Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS (token-based) 
 
 ## Local development
 
-Prerequisites: Node ≥ 20.11, a Supabase project (hosted, or local via the [Supabase CLI](https://supabase.com/docs/guides/cli)), and PostgreSQL 15+ server binaries for the DB test suite.
+Prerequisites: Node ≥ 20.11, **ffmpeg/ffprobe** (for the analysis worker and its tests), a Supabase project (hosted, or local via the [Supabase CLI](https://supabase.com/docs/guides/cli)), and PostgreSQL 15+ server binaries for the DB test suite.
 
 ```bash
 cd content-os
@@ -33,6 +36,7 @@ npx supabase link --project-ref <ref>
 npx supabase db push
 
 npm run dev                       # http://localhost:3000
+npm run worker                    # separate terminal: processes analysis jobs (needs DATABASE_URL + ffmpeg)
 ```
 
 With local Supabase, confirmation emails go to Inbucket at http://localhost:54324.
@@ -74,7 +78,22 @@ The DB suite runs `scripts/local-db.sh`. It creates a temporary cluster from the
 
 Any Node host works the same way (`npm ci && npm run build && npm start`).
 
-### 3. Instagram (optional in Phase 1)
+### 3. Analysis worker (Phase 2)
+
+The web app only queues analyses. A separate long-running worker processes them.
+
+1. Build and run `worker/Dockerfile` (Node 22 + ffmpeg) on any container host: Fly.io, Render, Railway, ECS or Cloud Run jobs. **Don't** run it on a serverless function, because jobs take up to several minutes.
+2. Set these on the worker:
+   - `DATABASE_URL`: Supabase direct connection string, server-only
+   - `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`: for storage
+   - `ANTHROPIC_API_KEY`: required for analyses to complete
+   - optional: `OPENAI_API_KEY` for transcripts, and `ANALYSIS_MODEL` (default `claude-opus-5-5`)
+3. Scale by running more worker processes; jobs are claimed safely in parallel. A stuck job is reclaimed after 10 minutes without a heartbeat.
+4. Optional, on the web app: set `YOUTUBE_API_KEY` to enable YouTube search and trending.
+
+Limits: MP4, MOV or WebM; at most 200 MB and 10 minutes; at most 40 scenes and 24 analyzed frames per video. Each analysis costs 5 workspace credits, refunded if it fails or is cancelled. See [docs/API_INTEGRATIONS.md](docs/API_INTEGRATIONS.md) for provider costs and quotas.
+
+### 4. Instagram (optional)
 
 1. Create a Meta app with **Instagram API with Instagram Login**.
 2. Add the OAuth redirect URI `https://<your-domain>/api/connections/instagram/callback`.
@@ -98,5 +117,8 @@ content-os/
   src/lib/               auth/session guards, permissions, validation, crypto, integrations
   src/components/        ui/ primitives, app/ shell + forms
   src/styles/tokens.css  design tokens (dark default, light, system)
-  tests/unit, tests/db   Vitest suites
+  src/server/discovery/  discovery providers (library, YouTube, Instagram) + registry
+  src/server/analysis/   worker pipeline: ffmpeg, scenes, transcription, Claude, report
+  worker/                worker entry point + Dockerfile
+  tests/unit, tests/db   Vitest suites (tests/fixtures: generated videos, mock providers)
 ```

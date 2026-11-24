@@ -76,7 +76,7 @@ These are stated plainly so they aren't mistaken for passing tests:
    - **Mitigation:** the [manual acceptance checklist](IMPLEMENTATION_STATUS.md#manual-acceptance-checklist-required-before-sign-off) must be run against a real project.
 2. **Instagram OAuth against Meta was not exercised.** It is tested only with mocked HTTP responses. Meta's response formats should be confirmed in a development app.
 3. **No browser end-to-end tests of signed-in pages**, since they need a live backend. Recommended next: Playwright end-to-end tests against `supabase start` in CI.
-4. **The CI workflow** (`.github/workflows/content-os-ci.yml`) and **`supabase/config.toml`** were written but not executed in GitHub Actions or with the Supabase CLI.
+4. **The CI workflow** (`.github/workflows/content-os-ci.yml`) has since run green on GitHub Actions (PR #1, all 185 tests including the DB suite). **`supabase/config.toml`** has not been run with the Supabase CLI.
 5. The DB tests use a **shim** for Supabase's `auth` schema and roles (`tests/db/supabase-shim.sql`). It reproduces how `auth.uid()` reads `request.jwt.claims`, the three API roles and Supabase's default grants, but it is not the real Supabase image.
 
 ## How to reproduce
@@ -88,3 +88,74 @@ npm test                 # requires PostgreSQL server binaries (initdb/pg_ctl)
 npm run typecheck
 NEXT_PUBLIC_SUPABASE_URL=https://x.supabase.co NEXT_PUBLIC_SUPABASE_ANON_KEY=x npm run build
 ```
+
+
+---
+
+# Phase 2 Test Report: Discover & Analyze
+
+_Run date: 2026-11-24 · Node 22.23 · PostgreSQL 16.15 · ffmpeg 6.1.1 · Vitest 5.1.1 · `@anthropic-ai/sdk` 1.13.0_
+
+## Summary
+
+| Check | Result |
+|---|---|
+| `npm test` | ✅ **306 passed, 0 failed** (23 files; 121 new in Phase 2) |
+| `npm run typecheck` | ✅ |
+| `npm run build` | ✅ (includes `/discover/*`, `/analyze/*`, `/api/analyses/*`) |
+| `npm audit` | ✅ 0 vulnerabilities |
+| Real worker smoke test (`npm run worker`) | ✅ (below) |
+
+## Real vs mocked
+
+| Component | In tests |
+|---|---|
+| PostgreSQL schema, RLS, queue functions | **Real** (local cluster plus Supabase shim, including a minimal `storage` schema) |
+| ffprobe / ffmpeg (metadata, audio extraction, scene detection, frames) | **Real**, on generated fixture videos |
+| Media storage | Local-directory `MediaStore` (the Supabase Storage implementation is not exercised) |
+| Claude | **Mocked** `AnalysisModel` in pipeline tests; the Claude provider class is tested with a **stubbed SDK client** |
+| Whisper | **Mocked** `TranscriptionProvider` in pipeline tests; the Whisper client is tested with **mocked HTTP** |
+| YouTube, Instagram, oEmbed | **Mocked HTTP** |
+
+## New test files
+
+| File | Tests | Covers |
+|---|---:|---|
+| `tests/db/references.test.ts` | 17 | Reference creation; server-managed columns locked; DB validation; **duplicate detection** by URL, provider item and file hash; tags, notes and delete; **workspace isolation** for references, searches and results, including cross-workspace injection; saved-search delete rules; **upload flow and storage policies** (reserved path only, outsiders blocked, type and size limits, object must exist, real size recorded, orphan-only deletion) |
+| `tests/db/analysis-jobs.test.ts` | 17 | Credits charged on request; uploaded video required; one active analysis per reference; idempotency key; **insufficient credits roll back atomically**; outsiders cannot request, cancel or read; clients cannot call worker functions or write results; cancel (queued: immediate refund; running: flag); **SKIP LOCKED single claim with 5 concurrent workers**; finish; lock ownership; **retry with backoff then fail and refund**; permanent failure with a single refund; **heartbeat crash recovery**; no deletion during analysis; notes-only report edits |
+| `tests/db/pipeline.test.ts` | 18 | **End-to-end pipeline with real ffmpeg:** steps recorded; ffprobe metadata; **scene cuts at about 2s and 4s with ffmpeg scores**; frames exist; **only one JPEG per scene sent to the vision model, none to text steps**; transcript timestamps preserved and aligned to scenes; schema-valid report with measured facts, tokens, cost and prompt versions; AI invocations recorded; reference thumbnail and duration; logs. No transcription provider → completes without a transcript. Silent video → `no_audio`. **Fake video (a shell script) rejected without being executed.** Duration limit. Missing AI provider fails with a refund. **Transient failure → retry → success with no duplicate rows.** Out-of-range timestamps re-asked; persistently invalid output → retry with nothing stored. **Cancellation between steps refunds credits with zero AI spend.** |
+| `tests/unit/discover-url.test.ts` | 24 | Instagram and YouTube URL forms, canonicalisation, **SSRF rejections** (http, IPv4/IPv6 literals, metadata IP, localhost, `.internal`, credentials, ports, `file:`, `javascript:`), tracking-parameter stripping |
+| `tests/unit/discover-upload.test.ts` | 6 | Type, extension and size validation; **magic-byte sniffing** rejects executables, images and scripts; tags; PostgREST-safe search terms |
+| `tests/unit/discovery-providers.test.ts` | 15 | Every provider documented; **failure isolation**; YouTube search, enrichment and format filter, with absent metrics left absent; Instagram own-media filter; hashtag search unavailable; library filter, sort and pagination; untrusted parameter parsing; URL checks (HEAD only, no redirects, login wall, 404, network failure, oEmbed metadata, other sites never fetched) |
+| `tests/unit/analysis-modules.test.ts` | 19 | Scene metadata parsing; boundaries, merge and cap; vision budget; ffprobe parsing; transcript alignment; measured editing facts; schema and timestamp validation; cost table; **Claude provider:** structured-output request with fallbacks and images, re-validation, refusal, truncation, SDK error mapping, fallbacks opt-out; **Whisper client:** request format, timestamp conversion, error classes |
+| `tests/unit/report-export.test.ts` | 3 | Every section present, AI interpretations labelled, timestamps kept, Markdown table escaping, safe file names |
+| `tests/unit/route-access.test.ts` | +2 | `/api/analyses` protected |
+
+## Real worker smoke test
+
+A job was queued against the local database, and `npm run worker` ran via `tsx` with no AI or transcription keys configured:
+
+```
+[worker] smoke-worker started · transcription: NOT CONFIGURED · AI: NOT CONFIGURED
+info  validate       Validate input: done — MP4, 4.0s, 320x240
+info  media          Process media: done — no audio stream
+info  scenes         Detect scenes: done — 1 cut(s) detected → 2 scene(s)
+info  transcription  Transcribe audio: skipped
+error visual         AI analysis provider is not configured (ANTHROPIC_API_KEY)
+analysis: failed · credits refunded (balance 45 → 50) · graceful shutdown on SIGTERM
+```
+
+## Defects found and fixed during Phase 2
+
+| Defect | Found by | Fix |
+|---|---|---|
+| `thumbnail_path` used by the library query but missing from the schema | Code review while writing the library layer | Column added to migration 0500 before any deployment |
+| Accented titles produced broken export file names (`Réference` → `re-ference`) | `report-export.test.ts` | Strip combining marks after NFKD normalization |
+| Provider-docs test threshold rejected the valid value "Free." | `discovery-providers.test.ts` | Test corrected (the code was right) |
+
+## Not covered (blockers)
+
+1. **No live Claude, Whisper, YouTube or Instagram calls.** No credentials were available. Anthropic keys can't be stored as network secrets in this environment. An OpenAI network-secret request was opened but not completed before the session restarted.
+2. **Supabase Storage, Auth and PostgREST not exercised live**, including the browser upload and the signed URLs. Same root cause as Phase 1.
+3. **Signed-in Discover and Analyze pages not rendered in a browser**, since they need a live backend. They compile, typecheck and build.
+4. **`worker/Dockerfile` not built**, because Docker isn't available in this environment.

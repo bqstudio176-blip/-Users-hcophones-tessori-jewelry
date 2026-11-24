@@ -25,5 +25,12 @@ npm run build
 ```
 Every schema or policy change needs a DB test in `tests/db/` that runs queries through `asUser`, `asAnon` or `asService`.
 
+## Analysis pipeline rules
+- Never claim AI output as fact: measured data (scenes, durations, cut rate) is computed in code; model output goes through Zod schemas plus `checkTimestamps` before it's stored.
+- Never fabricate progress or metrics. Show only provider-reported numbers.
+- Never download third-party videos from URLs. Only fetch canonical, allow-listed URLs, and only for accessibility checks.
+- Run ffmpeg only through `src/server/analysis/media/ffmpeg.ts` (`execFile`, argument arrays, timeouts).
+- Bump the prompt version in `ai/prompts.ts` whenever a prompt changes.
+
 ## Phase boundary
-Phase 1 (Foundation) is complete. **Do not start Phase 2 without explicit authorization.**
+Phases 1 (Foundation) and 2 (Discover & Analyze) are implemented. **Do not start Phase 3 (Script Lab) without explicit authorization.**

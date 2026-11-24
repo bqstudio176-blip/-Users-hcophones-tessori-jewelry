@@ -70,3 +70,51 @@ All functions are `SECURITY DEFINER`, use `set search_path = ''`, and derive ide
 - The ledger and audit log cannot be updated or deleted, even by `service_role`.
 - Only one social account and one credentials row can exist per workspace.
 - Only one owner can exist per workspace.
+
+---
+
+# Phase 2 — Discover & Analyze
+
+## Migrations
+
+| File | Contents |
+|---|---|
+| `…0500_discover_schema.sql` | `discovery_sources` (seeded), `content_references`, `reference_tags`, `discovery_searches`, `discovery_results`, plus triggers that keep each row in the same workspace as its parent |
+| `…0600_analyze_schema.sql` | `video_analyses`, `analysis_jobs`, `analysis_job_logs`, `transcripts`, `transcript_segments`, `detected_scenes`, `analysis_reports`, `ai_invocations`, plus the upload, request/cancel and worker queue functions |
+| `…0700_phase2_rls_and_grants.sql` | RLS on all new tables, column grants, function privileges |
+| `…0800_media_storage.sql` | Private `media` bucket (200 MB limit; MP4/MOV/WebM/JPEG) and storage policies. Skipped when no `storage` schema exists. |
+
+No Phase 1 table was duplicated. Analyses reuse the Phase 1 credit ledger (`apply_credit_transaction`) and audit log.
+
+## Tables
+
+| Table | Key columns and constraints |
+|---|---|
+| `content_references` | `source_type` (upload/instagram/youtube/web); `url` (https only); `normalized_url`; `title`, `description`, `notes`, `category`; server-managed `media_*`, `thumbnail_path`, `url_check`, `analysis_status`. **Duplicate detection:** unique per workspace on `normalized_url`, `media_sha256`, and (`provider`, `external_id`). |
+| `reference_tags` | PK (`reference_id`, `tag`); tag matches `^[a-z0-9][a-z0-9 _-]{0,39}$`; must be in the same workspace as its reference |
+| `discovery_searches` | Query, filters (jsonb), providers, saved flag and name, status (completed/partial/failed), per-provider errors |
+| `discovery_results` | Provider, external id, URL, metadata, provider-reported `metrics`, `retrieved_at`, link to a saved reference; unique (`search_id`, `provider`, `external_id`) |
+| `video_analyses` | Status (queued/processing/completed/failed/canceled), ffprobe `media_metadata`, `processing` facts, transcript and visual status, `credits_charged` / `credits_refunded`. **At most one active analysis per reference** (partial unique index). |
+| `analysis_jobs` | Queue state: status, `current_step`, `steps` (jsonb), `attempts` / `max_attempts`, `run_after` (backoff), `locked_by`, `heartbeat_at`, `cancel_requested`, `idempotency_key` (unique per workspace) |
+| `analysis_job_logs` | Append-only processing log |
+| `transcripts`, `transcript_segments` | Provider, model, language; segments with original `start_ms` / `end_ms`, speaker and confidence |
+| `detected_scenes` | `start_ms`, `end_ms`, generated `duration_ms`, ffmpeg `detection_score`, `frame_path`, `visual_analyzed`, `visual` (validated jsonb), transcript excerpt, purpose, editing notes |
+| `analysis_reports` | `sections` (validated jsonb, `schema_version` 1), `user_notes`, model provider and id, prompt versions, tokens, cost, processing time |
+| `ai_invocations` | One row per model call: purpose, model, prompt version, status (succeeded/failed/invalid_output/refused), tokens, latency, cost. Append-only. |
+
+## Functions
+
+| Function | Caller | Behaviour |
+|---|---|---|
+| `begin_reference_upload(ref, mime, size)` | member | Validates type and size, reserves `<ws>/references/<ref>/<uuid>.<ext>` |
+| `complete_reference_upload(ref, sha256)` | member | Requires the storage object to exist; records its real size; duplicate hash → `23505` |
+| `request_analysis(ref, idempotency_key)` | member | Requires an uploaded video and no active analysis; charges `analysis_credit_cost()` (5) atomically; queues the job; idempotent |
+| `cancel_analysis(id)` | requester or owner/admin | Queued → cancelled and refunded immediately. Running → sets the cancel flag, which the worker checks between steps. |
+| `claim_analysis_job(worker)` | service_role | `FOR UPDATE SKIP LOCKED`; also reclaims jobs whose heartbeat is older than 10 minutes |
+| `heartbeat_analysis_job`, `finish_analysis_job`, `fail_analysis_job`, `cancel_running_analysis_job` | service_role | Only the worker holding the lock can call these. Failures are retried with backoff until `max_attempts`, then fail and refund once. |
+
+## Deletion rules
+
+- References cannot be deleted while an analysis is queued or running (enforced by RLS).
+- Deleting a reference cascades to its tags, analyses, jobs, logs, transcripts, scenes and reports.
+- Storage objects can be deleted by members only once orphaned: their reference or analysis row must be gone. The app removes them right after deleting the row.

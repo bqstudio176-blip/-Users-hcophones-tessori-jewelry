@@ -84,3 +84,39 @@ These need review. Each is easy to change at this stage.
 5. **Application-layer token encryption** (AES-256-GCM, versioned keys in environment variables) instead of Supabase Vault/pgsodium. This keeps keys out of the database entirely and works the same locally and in production.
 6. **Admin reads through RLS** (`is_platform_admin()` in policies) rather than the service-role key, which reduces how widely the service role is used.
 7. **Plan catalogue** (`free` / `creator` / `studio`) with placeholder prices. Nothing is charged.
+
+## 8. Phase 2 additions: Discover and Analyze
+
+```
+Browser ──upload (signed-in, RLS-checked)──▶ Supabase Storage (private "media" bucket)
+   │
+   └─▶ Next.js server actions ──request_analysis()──▶ analysis_jobs (Postgres queue)
+                                                         │ claim (FOR UPDATE SKIP LOCKED)
+                                                         ▼
+                       Worker process (npm run worker, Node + ffmpeg, separate container)
+                         validate → media → scenes → transcription → visual → analysis → report
+                         ffprobe/ffmpeg     │            │               │          │
+                                            ▼            ▼               ▼          ▼
+                                      Storage frames   Whisper         Claude     Postgres
+```
+
+- **Background processing uses a Postgres-backed queue, not Redis/BullMQ.** The brief allowed Redis/BullMQ only "if already approved", and it isn't part of the approved architecture. `analysis_jobs` provides:
+  - claiming with `SKIP LOCKED`, so concurrent workers are safe
+  - heartbeats and recovery of jobs whose worker died
+  - retries with exponential backoff (30s × 2ⁿ, at most 15 minutes, up to 3 attempts)
+  - cancellation
+  - idempotency keys
+  - per-step progress and logs
+
+  This avoids new infrastructure, keeps job state under RLS (members watch progress safely), and lets job transitions commit atomically with credit refunds. If volume ever needs it, the claim function can be swapped for BullMQ without changing the pipeline.
+- **The worker is a separate process** (`worker/index.ts`, `worker/Dockerfile`). It connects with `DATABASE_URL` (owner role) and uses the service role only for Storage. The web app never runs ffmpeg.
+- **Pipeline steps** (`src/server/analysis/pipeline.ts`) are idempotent. Each step deletes and rewrites its own rows inside a transaction, so a retry never duplicates data. The worker checks for cancellation between steps.
+- **Providers sit behind interfaces:** `DiscoveryProvider`, `TranscriptionProvider` and `AnalysisModel`, plus `MediaStore` (Supabase or local directory). Each can be swapped without touching the pipeline. Tests use clearly labelled mock implementations.
+- **Facts versus interpretation:** scene boundaries, durations, cut rate and speech coverage are measured by ffmpeg and alignment code. Claude only interprets and is told not to recompute them. Report schemas separate `evidence` / `observations` (timestamped facts) from `interpretation`.
+
+### Phase 2 deviations
+
+1. **Postgres queue instead of Redis/BullMQ** (above).
+2. **No server-side video download from URLs.** Imported Instagram and YouTube links are checked for accessibility (HEAD / oEmbed) and enriched with metadata. Analysis requires the user to upload the file. This follows the brief's "do not promise unrestricted downloading", platform terms, and SSRF prevention.
+3. **Whisper for transcription** (the brief's example); speaker diarization is not available from `whisper-1`.
+4. **Uploads go straight from the browser to Storage**, using the signed-in user's client restricted by an RLS policy to the path reserved by `begin_reference_upload()`. The web server never proxies large files and never uses the service role for uploads.
