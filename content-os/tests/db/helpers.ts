@@ -111,3 +111,45 @@ export async function upgradePlan(workspaceId: string, planId = "studio") {
 export async function makePlatformAdmin(user: TestUser) {
   await sql("update public.profiles set is_platform_admin = true where id = $1", [user.id]);
 }
+
+// ---------------------------------------------------------------------------
+// Phase 2 helpers
+// ---------------------------------------------------------------------------
+export async function createReference(
+  user: TestUser,
+  workspaceId: string,
+  overrides: Record<string, unknown> = {},
+): Promise<{ id: string }> {
+  const row = { workspace_id: workspaceId, source_type: "upload", provider: "manual", title: "Reference", created_by: user.id, ...overrides };
+  const cols = Object.keys(row);
+  const { rows } = await asUser(user, (q) =>
+    q(
+      `insert into public.content_references (${cols.join(", ")}) values (${cols.map((_, i) => `$${i + 1}`).join(", ")}) returning id`,
+      Object.values(row),
+    ),
+  );
+  return rows[0];
+}
+
+/** Full upload flow as the user: reserve path → upload object (RLS) → complete. */
+export async function uploadVideo(user: TestUser, referenceId: string, opts: { size?: number; sha?: string | null } = {}) {
+  const size = opts.size ?? 1024;
+  const { rows } = await asUser(user, (q) =>
+    q("select public.begin_reference_upload($1, 'video/mp4', $2) as path", [referenceId, size]),
+  );
+  const path = rows[0].path as string;
+  await asUser(user, (q) =>
+    q("insert into storage.objects (bucket_id, name, owner, metadata) values ('media', $1, $2, $3)", [
+      path,
+      user.id,
+      JSON.stringify({ size, mimetype: "video/mp4" }),
+    ]),
+  );
+  await asUser(user, (q) => q("select public.complete_reference_upload($1, $2)", [referenceId, opts.sha ?? null]));
+  return path;
+}
+
+export async function creditBalance(workspaceId: string): Promise<number> {
+  const { rows } = await pool.query("select balance from public.usage_credits where workspace_id = $1", [workspaceId]);
+  return rows[0].balance;
+}
