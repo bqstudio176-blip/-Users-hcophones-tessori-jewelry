@@ -25,6 +25,7 @@ export const PROTECTED_PREFIXES = [
   "/onboarding",
   "/admin",
   "/api/connections",
+  "/api/analyses",
 ];
 
 function matches(pathname: string, prefix: string) {

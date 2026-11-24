@@ -46,3 +46,17 @@ const AUDIT_LABELS: Record<string, string> = {
 export function auditLabel(action: string) {
   return AUDIT_LABELS[action] ?? action;
 }
+
+export function formatDuration(seconds: number | string | null | undefined): string {
+  if (seconds === null || seconds === undefined || seconds === "") return "—";
+  const s = Math.round(Number(seconds));
+  if (!Number.isFinite(s)) return "—";
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return h ? `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}` : `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+export function formatCompact(n: number): string {
+  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(n);
+}
