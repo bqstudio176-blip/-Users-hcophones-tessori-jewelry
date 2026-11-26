@@ -15,7 +15,8 @@
     "test:unit": "vitest run tests/unit",
     "test:db": "vitest run tests/db",
     "db:local": "bash scripts/local-db.sh",
-    "worker": "tsx worker/index.ts"
+    "worker": "tsx worker/index.ts",
+    "rules:seed": "tsx scripts/generate-rules-seed.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.13.0",
