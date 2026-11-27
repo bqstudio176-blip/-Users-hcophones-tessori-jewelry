@@ -8,7 +8,7 @@ import { RequestAnalysisForm } from "@/components/analyze/request-analysis-form"
 import { SceneTimeline, type TimelineScene } from "@/components/analyze/scene-timeline";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonClasses } from "@/components/ui/button";
+import { buttonClasses } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ErrorState, PageHeader, Stat } from "@/components/ui/states";
 import { can } from "@/lib/auth/permissions";
@@ -142,7 +142,7 @@ export default async function AnalysisPage({ params }: { params: Promise<{ id: s
         <a href={`/api/analyses/${id}/export?format=md`} className={buttonClasses("outline", "sm")}>Export Markdown</a>
         <a href={`/api/analyses/${id}/export?format=json`} className={buttonClasses("outline", "sm")}>Export JSON</a>
         <RequestAnalysisForm referenceId={ref.id} cost={Number(cost ?? 5)} label="Re-run analysis" variant="outline" />
-        <Button variant="outline" size="sm" disabled aria-disabled title="Available when Script Lab launches in Phase 3">Send to Script Lab · Phase 3</Button>
+        <Link href={`/script-lab?reference=${ref.id}`} className={buttonClasses("outline", "sm")}>Send to Script Lab</Link>
       </div>
 
       <Alert tone="info" className="mb-6">

@@ -276,7 +276,14 @@ export async function generateStrategyRecommendations(deps: OrchestratorDeps, st
   })));
   await deps.db.update("content_strategies", {
     research_brief: brief,
-    recommendations: { generated_at: new Date().toISOString(), agent_run_id: result.runId, count: result.data.recommendations.length, sources: Object.fromEntries(refMap) },
+    recommendations: {
+      generated_at: new Date().toISOString(),
+      agent_run_id: result.runId,
+      count: result.data.recommendations.length,
+      sources: Object.fromEntries(refMap),
+      rules: selected.map((s) => ({ id: s.rule.id, slug: s.rule.slug, name: s.rule.name, category: s.rule.category, evidence_type: s.rule.evidence_type, reasons: s.reasons })),
+      performance_insights: "none recorded",
+    },
     selected_rule_ids: selected.map((s) => s.rule.id),
   }, { id: strategy.id, workspace_id: deps.workspaceId });
 

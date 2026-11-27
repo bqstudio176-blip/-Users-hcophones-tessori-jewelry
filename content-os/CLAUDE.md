@@ -32,5 +32,13 @@ Every schema or policy change needs a DB test in `tests/db/` that runs queries t
 - Run ffmpeg only through `src/server/analysis/media/ffmpeg.ts` (`execFile`, argument arrays, timeouts).
 - Bump the prompt version in `ai/prompts.ts` whenever a prompt changes.
 
+## Script Lab / creative engine rules
+- Agents never change saved content. AI edits go to `scripts.pending_proposal` and are applied only through `replace_script_content(..., 'ai_edit_applied')` after explicit user confirmation. Locked scenes and stale proposals are rejected in the RPC.
+- Every agent output goes through its Zod schema and its validator in `src/server/creative/validators.ts` (citations, forbidden claims, originality ≤ 15%, duration, locked scenes).
+- Wrap all user and third-party text with `untrustedBlock()` before it reaches a prompt.
+- Credits are charged only by `record_ai_agent_run` with status `succeeded`. Never charge before the model call.
+- Recommendations carry provenance (`observed` with a cited id, `user`, or `hypothesis`). Never present a hypothesis as fact or promise performance.
+- Bump the version in `src/server/creative/prompts.ts` whenever a prompt changes. Never edit an applied seed migration; add a new one.
+
 ## Phase boundary
-Phases 1 (Foundation) and 2 (Discover & Analyze) are implemented. **Do not start Phase 3 (Script Lab) without explicit authorization.**
+Phases 1 (Foundation), 2 (Discover & Analyze) and 3 (Script Lab & Creative Intelligence) are implemented. **Do not start Phase 4 without explicit authorization.**

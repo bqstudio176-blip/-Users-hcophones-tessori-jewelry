@@ -99,3 +99,16 @@ export type IdeaKind = (typeof IDEA_KINDS)[number]["id"];
 
 export const labelOf = <T extends { id: string; label: string }>(list: readonly T[], id: string | null | undefined) =>
   list.find((x) => x.id === id)?.label ?? id ?? "—";
+
+export const RULE_CATEGORIES_LABELS: Record<string, string> = {
+  attention_psychology: "Psychology of attention",
+  hooks_openings: "Hooks and openings",
+  storytelling: "Storytelling",
+  audience_retention: "Audience retention",
+  curiosity: "Curiosity",
+  emotional_connection: "Emotional connection",
+  authority_credibility: "Authority and credibility",
+  persuasion: "Persuasion",
+  conversion: "Conversion",
+  calls_to_action: "Calls to action",
+};

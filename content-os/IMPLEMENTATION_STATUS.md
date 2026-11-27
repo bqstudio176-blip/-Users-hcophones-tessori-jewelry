@@ -188,3 +188,73 @@ _Last updated: 2026-11-24 · Branch: `claude/content-os-phase-1-xyfdxl` (session
 5. Cancel a queued analysis and confirm the credits are refunded. Upload a renamed non-video file and confirm the analysis fails clearly with a refund.
 6. With YouTube configured, run a search, save a result to the library, save the search, and check Trending on the Discover page.
 7. From a second workspace, confirm none of the above is visible and that `/analyze/<id>` from the first workspace returns 404.
+
+---
+
+# Phase 3: Script Lab & AI Creative Intelligence Engine
+
+_Last updated: 2026-11-27 · Branch: `claude/content-os-phase-1-xyfdxl`_
+
+## Blocker carried over from Phase 2
+
+Phase 2 acceptance criteria 7 (live transcription) and 9 (live AI analysis) remain **unverified against live providers**: no OpenAI or Anthropic key is available in the build environment. Phase 3 was built on the stable Phase 2 code (306 tests green), and every Phase 3 AI flow is tested end to end with a deterministic mock model against real Postgres. **Before sign-off, run the manual checklist below with real keys.**
+
+## Acceptance criteria
+
+| # | Criterion | Status | Evidence |
+|---|---|---|---|
+| 1 | Projects and saved strategies with every Strategy Builder field | ✅ | `content_strategies`; `tests/db/creative.test.ts` |
+| 2 | Recommendations with reasoning and provenance; no fabricated research | ✅ / 🟡 | Provenance mapped to real reference ids; unknown citations rejected and re-asked. Orchestrator tests. Live model unverified. |
+| 3 | 100–120 documented rules in 10 categories with full structure | ✅ | 110 rules; integrity tests; CREATIVE_RULES_DOCUMENTATION.md |
+| 4 | Rule library management (search, filters, tags, create/edit, enable/disable, versions, approval) | ✅ | RPCs plus versioning trigger tested; `/script-lab/rules` UI |
+| 5 | Explainable rule selection, never every rule | ✅ | `selection.ts`; 5 unit tests; reasons stored on the strategy |
+| 6 | Hook Generator: 10 approaches with full fields; generate more, compare, favorite, edit, send to Script Lab | ✅ / 🟡 | Mock end to end; no virality promises (validator) |
+| 7 | Script Lab: 10 formats, 8 sections, scene-level fields, duration validated as an estimate | ✅ / 🟡 | Duration checks (±15%, min ±3s); UI labels estimates |
+| 8 | Editor: edit, reorder, add, delete, duplicate, regenerate section, rewrite, tone, shorten/expand, versions, notes; user edits preserved | ✅ | Scene RPCs; proposal → confirm flow; locked scenes enforced in the RPC; stale proposals rejected |
+| 9 | Quality Agent: 10 criteria, heuristic, recommends only | ✅ / 🟡 | Test asserts the script is unchanged after a report |
+| 10 | 5 agents plus orchestrator; Claude behind a provider abstraction; schema-validated JSON | ✅ / 🟡 | `AnalysisModel`; Zod structured outputs; validators |
+| 11 | Workspace-scoped, relevance-filtered context | ✅ | Cross-workspace isolation test; scope triggers |
+| 12 | Feedback with reasons stored with the version; controlled preference retrieval; no silent training | ✅ | `script_feedback.target_version`; only approved preferences reach prompts |
+| 13 | Usage and cost tracking; credits; no charge on failure; limits and rate limiting | ✅ | `record_ai_agent_run`, `check_ai_usage`; 4 DB tests plus orchestrator tests |
+| 14 | Security: injection protection, originality | ✅ | Untrusted blocks, neutralisation, no tools, claim and citation checks, 8-gram originality ≤ 15% |
+| 15 | UI screens | ✅ | Dashboard, Strategy Builder, Rules Library, Rule Detail, Hook Generator, Script Lab (new), Script Editor, Version History, Quality Report, Feedback & preferences, AI usage. `next build` passes. Not exercised in a browser against live Supabase. |
+| 16 | Tests and docs | ✅ | 360/360 passing; docs listed below |
+
+## Features implemented
+
+- **Creative intelligence:** projects (create, archive); Strategy Builder; Research → Strategy orchestration; 9 recommendation kinds with provenance badges (Observed · R1, From your brief, Hypothesis); favorites; feedback on every item.
+- **Creative Rules Engine:** 110 original rules; library UI with search and 7 filters; detail with version history; workspace rules (draft → approval); per-workspace overrides of global rules; selection engine with reasons.
+- **Hook Generator:** categories, count and instructions; full hook fields; inline edit (original kept); favorite; delete; compare grid; "Write script from this hook".
+- **Script Lab:** generate from strategy, with an optional hook, format, duration and tone; 8 sections plus scenes; duration panel (estimate); scene editor (edit, reorder, duplicate, add, delete, lock); AI tools (rewrite selected, regenerate section, change tone, shorten, expand) as proposals with a side-by-side diff and Apply/Discard; save, restore and view versions; alternatives as separate scripts; notes; status (draft/approved/archived).
+- **Quality Agent:** 10 criteria (1–5) with explanations, strengths, weaknesses and suggestions by scene, deterministic checks, report history, heuristic disclaimer.
+- **Feedback & preferences:** feedback history; deterministic suggestions from repeated reasons (never auto-applied); preferences with owner/admin approval.
+- **AI usage:** per-run table (agent, status, model, prompt version, tokens, time, credits), totals, provider cost and price list.
+- **Integration:** "Send to Script Lab" from analysis reports; real script count on the dashboard; billing copy updated.
+
+## Not implemented / limitations
+
+- Performance insights: none, because no real performance data exists yet (Phase 5+ analytics). The UI states this.
+- Agents run synchronously in server actions (`maxDuration = 300`), not on the worker queue. Acceptable for single-agent latency; very long scripts may approach host timeouts.
+- Rule selection is keyword-based, not semantic.
+- No live Claude verification (no key in this environment).
+
+## Outstanding dependencies (Phase 3)
+
+| Dependency | Needed for | Owner action |
+|---|---|---|
+| `ANTHROPIC_API_KEY` on the **web app** | All Script Lab AI actions | Add it as an environment variable in hosting (not as a network secret) |
+| Apply migrations 0900–1100 | Script Lab | `supabase db push` |
+| Live verification | Phase 2 criteria 7 and 9, plus Phase 3 AI flows | Run the checklist below |
+
+## Phase 3 manual acceptance checklist
+
+1. Apply migrations and confirm `select count(*) from creative_rules where workspace_id is null` returns 110.
+2. Analyze a reference (Phase 2), then click **Send to Script Lab** → create a project → save a strategy with that reference selected.
+3. **Generate recommendations.** Check that every kind is present, observed items cite R1 and point to the reference, and the selected rules show their reasons. Credits drop by 3 (1 + 2).
+4. Generate 5 hooks across 3 categories; edit one, favorite one, and use it to write a 45s Reel script.
+5. In the editor: lock scene 2, ask "Shorten script", review the proposal (scene 2 unchanged), apply, and confirm a new version exists.
+6. Edit a scene manually, then try to apply an older proposal: it must be blocked as stale.
+7. Run a quality check. Scores show 1–5, and the script is unchanged.
+8. Submit "not useful · too long" feedback twice, then confirm the suggestion appears on the Feedback page; add it, approve it as owner, and regenerate.
+9. Remove `ANTHROPIC_API_KEY`: AI actions show "not configured" and no credits move.
+10. Check `/script-lab/usage`: runs, tokens and credits match the ledger.

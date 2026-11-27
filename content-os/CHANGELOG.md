@@ -2,6 +2,18 @@
 
 All notable changes to Content OS. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0] — 2026-11-27 — Phase 3: Script Lab & AI Creative Intelligence Engine
+
+### Added
+- **Database** (migrations 0900–1100): creative projects, content strategies, creative rules (global and workspace, versioned, approval workflow, tags, per-workspace overrides), AI agent runs and pricing, usage limits per plan, generated ideas and hooks, scripts with scenes, versions and pending AI proposals, quality reports, feedback (stored with content version) and creative preferences. RLS, scope triggers and append-only history throughout.
+- **Creative Rules Engine:** 110 original documented rules in 10 categories (29 established principles with evidence notes, 78 practitioner heuristics, 3 experimental), seeded by a generated migration (`npm run rules:seed`), with a deterministic, explainable selection engine.
+- **Creative Orchestrator and 5 agents** (Research, Strategy, Hook, Script and its edit mode, Quality) on Claude through the shared provider abstraction, with Zod structured outputs, semantic validators, one corrective retry, versioned prompts and workspace-scoped, relevance-filtered context.
+- **Billing:** per-agent credit prices charged only on validated success (`record_ai_agent_run`); pre-flight credit and rate-limit checks (`check_ai_usage`); usage and cost per run.
+- **Safety:** untrusted-data delimiting and neutralisation, citation validation, forbidden-claim checks (no virality or result promises), 8-gram originality limit, locked scenes and stale-proposal protection in the database.
+- **UI:** Script Lab dashboard, project page, Strategy Builder with provenance-labelled recommendations, Hook Generator, new-script form, Script Editor (scenes, sections, AI proposals, versions, alternatives), Version History, Quality Report, Creative Rules library, detail and editor, Feedback & preferences, and AI usage. "Send to Script Lab" from analysis reports; script count on the dashboard.
+- **Tests:** 54 new (360 total).
+- **Docs:** `docs/AI_ARCHITECTURE.md`, `docs/CREATIVE_RULES_DOCUMENTATION.md`; Phase 3 sections in the status, test report, schema and API integration documents.
+
 ## [0.2.0] — 2026-11-24 — Phase 2: Discover & Analyze
 
 ### Added

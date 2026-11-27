@@ -118,3 +118,59 @@ No Phase 1 table was duplicated. Analyses reuse the Phase 1 credit ledger (`appl
 - References cannot be deleted while an analysis is queued or running (enforced by RLS).
 - Deleting a reference cascades to its tags, analyses, jobs, logs, transcripts, scenes and reports.
 - Storage objects can be deleted by members only once orphaned: their reference or analysis row must be gone. The app removes them right after deleting the row.
+
+---
+
+# Phase 3 — Script Lab & Creative Intelligence
+
+Migrations:
+- `20261126000900_creative_schema.sql`: enums, tables, triggers
+- `20261126001000_creative_functions_rls.sql`: functions, RLS, grants
+- `20261126001100_seed_creative_rules.sql`: generated; 110 global rules, 231 tags
+
+## Enums
+
+`creative_rule_category` (10), `creative_rule_status` (draft, pending_approval, approved, disabled), `creative_evidence_type` (established_principle, practitioner_heuristic, experimental), `creative_complexity`, `creative_agent` (research, strategy, hook, script, script_edit, quality), `hook_category` (10), `script_format` (10).
+
+## Tables
+
+| Table | Purpose / key columns |
+|---|---|
+| `ai_agent_pricing` | Credits per agent: research 1, strategy 2, hook 2, script 4, script_edit 1, quality 1. Read-only to clients. |
+| `ai_usage_limits` | Per plan: per-user per-minute, workspace hourly and daily limits (free 5/20/60, creator 8/60/300, studio 12/150/1000) |
+| `creative_projects` | Workspace project: name, description, status (active/archived) |
+| `content_strategies` | Strategy Builder fields (name, niche, target_audience, objective, main_topic, tone, platform, preferred_format, duration_seconds, reference_ids, manual_topics, restrictions, desired_cta, use_content_history), plus `research_brief`, `recommendations` (including rule reasons) and `selected_rule_ids`. A scope trigger checks that the project and every reference belong to the workspace. |
+| `creative_rules` | Global (`workspace_id` null) or workspace rules. Full rule structure (see CREATIVE_RULES_DOCUMENTATION.md), `version`, `status`, approval fields. The versioning trigger snapshots the previous content on edit, bumps the version and resets workspace approval. |
+| `creative_rule_tags` | (rule_id, tag) |
+| `creative_rule_versions` | Append-only snapshots (rule_id, version, snapshot, changed_by) |
+| `creative_rule_overrides` | Per-workspace enable/disable of global rules |
+| `ai_agent_runs` | One row per agent run: agent, status (succeeded/failed/invalid_output/refused/rejected), provider, model, prompt_version, tokens, duration, cost_usd, **credits_charged**, error, request_summary. Append-only. |
+| `ai_invocations` (+`agent_run_id`) | The Phase 2 per-call records are reused as Phase 3 usage records, one per model call |
+| `generated_ideas` | Strategy output: kind (9), title, body, reasoning, `provenance` jsonb (observed/user/hypothesis with source), `is_favorite` |
+| `generated_hooks` | text, `original_text` (kept when edited), category, mechanism, visual_opening, delivery, duration_seconds, rationale, rule_ids, is_favorite |
+| `scripts` | project, strategy, hook, format, title, tone, target_duration_seconds, `sections` jsonb (8 sections plus rules_applied and assumptions), rule_ids, status (draft/approved/archived), `current_version`, `pending_proposal` (AI edit awaiting confirmation), `parent_script_id` (alternatives), notes |
+| `script_scenes` | position (unique per script, deferrable), section, scene_title, estimated_duration_seconds, spoken_text, visual/camera/on-screen/audio direction, transition, creative_purpose, `is_locked` |
+| `script_versions` | Append-only snapshots with source (generated, manual_save, before_ai_edit, ai_edit_applied, before_restore, restored) and note |
+| `script_quality_reports` | script_version, agent_run_id, `report` (AI, heuristic), `checks` (deterministic) |
+| `script_feedback` | target_type (idea/hook/script/recommendation/quality_report/strategy), target_id, **target_version**, rating, reasons (fixed set), comment. A trigger checks that the target is in the workspace. |
+| `creative_preferences` | kind (prefer/avoid), scope, statement, source (user/feedback_suggestion), **approved**. Only approved preferences reach the agents. |
+
+Every tenant table has `workspace_id`, RLS and a scope trigger that rejects cross-workspace foreign keys.
+
+## Functions (all `SECURITY DEFINER`, `search_path = ''`)
+
+| Function | Caller | Behaviour |
+|---|---|---|
+| `check_ai_usage(ws, agent)` | member | Returns `{allowed, reason, credits, …}`. Checks balance ≥ price and the per-user minute, workspace hour and workspace day limits. |
+| `record_ai_agent_run(...)` | member | Inserts the run and its invocations. Charges credits through `apply_credit_transaction` **only when status = succeeded**; raises `P0001` if the balance is insufficient. |
+| `save_script_version(script, note)` | member | Manual snapshot |
+| `replace_script_content(script, title, sections, scenes, source, note)` | member | Atomic replace with a version before and after. For `ai_edit_applied`, rejects changes to locked scenes and stale proposals. |
+| `restore_script_version(script, version)` | member | Snapshots current content (`before_restore`) and restores |
+| `reorder_script_scenes`, `insert_script_scene`, `delete_script_scene` | member | Position-safe scene operations; locked scenes cannot be deleted |
+| `set_creative_rule_status(rule, status)` | member / owner-admin / platform admin | Submit (member); approve or disable (owner/admin); global rules (platform admin). Audited. |
+| `set_creative_rule_override(ws, rule, enabled)` | owner/admin | Disable or enable a global rule for the workspace |
+| `set_creative_preference_approval(pref, approved)` | owner/admin | Activate or pause a preference |
+
+## Privileges
+
+Clients get column-level `insert`/`update` grants only on user-editable columns. `credits_charged`, `version`, `status`, `approved_by` and `current_version` are written only by RPCs or triggers. `ai_agent_runs`, `script_versions` and `creative_rule_versions` reject update and delete even for `service_role`.

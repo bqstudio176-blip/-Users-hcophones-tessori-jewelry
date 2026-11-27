@@ -4,6 +4,7 @@ A multi-tenant SaaS for short-form content teams.
 
 - **Phase 1 (Foundation):** authentication, workspaces and roles, dashboard, settings, Instagram connection foundation, plans and credit ledger, admin panel.
 - **Phase 2 (Discover & Analyze):** reference library, multi-source discovery, URL and video import, and a background AI video analysis engine (transcription, scene detection, structured reports).
+- **Phase 3 (Script Lab & Creative Intelligence):** creative projects, Strategy Builder with provenance-labelled recommendations, a 110-rule Creative Rules Engine with explainable selection, Hook Generator, Script Lab (structured scripts, scene editor, AI edit proposals, versions), Quality Agent, feedback and approved preferences, and AI usage and credit tracking.
 
 > This directory is self-contained. The repository root also holds a separate, pre-existing static site (Tessori Jewelry), which is untouched.
 
@@ -12,7 +13,7 @@ A multi-tenant SaaS for short-form content teams.
 | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) | What is done, what is not, acceptance criteria |
 | [TEST_REPORT.md](TEST_REPORT.md) | Test inventory, results, what is *not* covered |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
-| [docs/](docs/) | Product spec, architecture, database schema, security plan (drafts awaiting approval), [API integrations](docs/API_INTEGRATIONS.md) |
+| [docs/](docs/) | Product spec, architecture, database schema, security plan (drafts awaiting approval), [API integrations](docs/API_INTEGRATIONS.md), [AI architecture](docs/AI_ARCHITECTURE.md), [creative rules](docs/CREATIVE_RULES_DOCUMENTATION.md) |
 
 ## Stack
 
@@ -74,7 +75,8 @@ The DB suite runs `scripts/local-db.sh`. It creates a temporary cluster from the
 1. Import the repository and set **Root Directory** to `content-os`.
 2. Set the environment variables listed in [`.env.example`](.env.example). `NEXT_PUBLIC_SITE_URL` must be the public HTTPS URL.
 3. Build command: `npm run build`. Start command: `npm start`. Node 20.11 or later.
-4. Check `GET /api/health`. It should return `{"status":"ok","supabaseConfigured":true}`.
+4. For Script Lab AI, set `ANTHROPIC_API_KEY` (and optionally `CREATIVE_MODEL`, `CREATIVE_EFFORT`) on the application, not only on the worker. Without it, Script Lab works for manual editing but AI actions report "not configured" and charge nothing.
+5. Check `GET /api/health`. It should return `{"status":"ok","supabaseConfigured":true}`.
 
 Any Node host works the same way (`npm ci && npm run build && npm start`).
 
@@ -119,6 +121,7 @@ content-os/
   src/styles/tokens.css  design tokens (dark default, light, system)
   src/server/discovery/  discovery providers (library, YouTube, Instagram) + registry
   src/server/analysis/   worker pipeline: ffmpeg, scenes, transcription, Claude, report
+  src/server/creative/   creative engine: orchestrator, agents (prompts/schemas), rules library + selection, validators
   worker/                worker entry point + Dockerfile
   tests/unit, tests/db   Vitest suites (tests/fixtures: generated videos, mock providers)
 ```

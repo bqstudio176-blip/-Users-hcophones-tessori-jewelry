@@ -105,7 +105,7 @@ export default async function BillingPage() {
               </table>
             </div>
           )}
-          <Alert tone="info" className="mt-4">Credits will be consumed by Script Lab and Video Studio once they launch. No feature consumes credits yet.</Alert>
+          <Alert tone="info" className="mt-4">Credits are consumed by video analyses (Analyze) and by Script Lab AI agents. AI agent runs are charged only when they return validated output — failed or rejected runs are free. See Script Lab → AI usage for a per-run breakdown.</Alert>
         </CardContent>
       </Card>
     </>

@@ -18,7 +18,7 @@ export const PRIMARY_NAV: NavItem[] = [
   { href: "/dashboard", label: "Overview", icon: "overview", status: "available", description: "Workspace health, usage and next steps." },
   { href: "/discover", label: "Discover", icon: "discover", status: "available", description: "Find, import and organize content references." },
   { href: "/analyze", label: "Analyze", icon: "analyze", status: "available", description: "AI breakdowns of hooks, storytelling, retention structure and editing." },
-  { href: "/script-lab", label: "Script Lab", icon: "scriptLab", status: "coming_soon", description: "Draft, iterate and approve scripts in your brand voice." },
+  { href: "/script-lab", label: "Script Lab", icon: "scriptLab", status: "available", description: "Strategy, hooks and scripts grounded in your research." },
   { href: "/video-studio", label: "Video Studio", icon: "videoStudio", status: "coming_soon", description: "Turn approved scripts into ready-to-post videos." },
   { href: "/experiments", label: "Experiments", icon: "experiments", status: "coming_soon", description: "A/B test hooks, captions and posting times." },
   { href: "/publish", label: "Publish", icon: "publish", status: "coming_soon", description: "Schedule and publish to your connected Instagram account." },

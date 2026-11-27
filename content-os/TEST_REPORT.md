@@ -159,3 +159,45 @@ analysis: failed · credits refunded (balance 45 → 50) · graceful shutdown on
 2. **Supabase Storage, Auth and PostgREST not exercised live**, including the browser upload and the signed URLs. Same root cause as Phase 1.
 3. **Signed-in Discover and Analyze pages not rendered in a browser**, since they need a live backend. They compile, typecheck and build.
 4. **`worker/Dockerfile` not built**, because Docker isn't available in this environment.
+
+---
+
+# Phase 3 Test Report: Script Lab & Creative Intelligence
+
+_Run date: 2026-11-27 · Node 22 · PostgreSQL 16 (local throwaway cluster) · Vitest 5.1.1_
+
+## Summary
+
+| Check | Command | Result |
+|---|---|---|
+| Unit + DB tests | `npm test` | ✅ **360 passed, 0 failed** (26 files; 54 new) |
+| Type check | `npx tsc --noEmit` | ✅ no errors |
+| Production build | `npm run build` | ✅ compiled; 11 new Script Lab routes |
+| Dependency audit | `npm audit --omit=dev` | ✅ 0 vulnerabilities |
+
+## Real vs mocked
+
+| Real | Mocked |
+|---|---|
+| PostgreSQL with all migrations, RLS, grants, RPCs and triggers, run as the `authenticated` role through `pgCreativeDb` | The model: `MockCreativeModel` returns deterministic, schema-valid fixtures, and can be scripted to return invalid output, unknown citations, transcript copies, refusals or provider errors |
+| The full orchestrator, validators, selection engine, credit ledger, usage records and versioning | — |
+
+## New test files
+
+| File | Tests | Covers |
+|---|---:|---|
+| `tests/db/creative.test.ts` | 17 | Project and strategy isolation; cross-workspace reference rejection; field validation; global library visibility and immutability; workspace rule drafting, approval and versioned re-approval; overrides; append-only history; **credits only on success**; `check_ai_usage` and the per-user rate limit; no free success without credits; usage isolation; script versioning and scene operations; reversible restore; **locked scenes protected from AI edits**; script isolation; feedback target checks; preference approval roles |
+| `tests/db/creative-orchestrator.test.ts` | 16 | Research → Strategy with correct charges; provenance mapped to real reference ids; explained rule selection saved; **imported transcripts treated as untrusted (injection test)**; unknown citations re-asked once with both calls recorded; persistent invalid output never stored or charged; provider failures not charged; pre-flight stop on insufficient credits or missing configuration; **transcript reproduction refused**; hooks across categories with real rule ids; complete script within duration (v1); proposals preserve locked scenes and apply with versioning; locked-scene and stale proposals rejected; quality report leaves the script unchanged; alternatives leave the original intact; cross-workspace isolation |
+| `tests/unit/creative-engine.test.ts` | 21 | Library integrity (110 rules, 11 × 10, unique, structure, seed in sync); selection (limited, diverse, explained, duration and tone filters, objective and format fit, signals, preferences, pins, exclusions, determinism); duration estimates and tolerance; sanitisation and delimiter forgery; injection detection; forbidden claims; 8-gram originality; relevance ranking; strategy, hook, script, edit and quality validators |
+
+## Defects found and fixed during Phase 3
+
+- A TypeScript `never` inference in `generateScript` (`typeof hook`). Fixed with an explicit `HookRow` type.
+- Orchestrator tests tripped the real per-user rate limit (as designed). The tests now age earlier runs in `beforeEach`.
+- The quality report UI initially showed scores out of 10 while the validator enforces 1–5. Fixed in the UI and docs.
+
+## Not covered (blockers)
+
+- **Live Claude calls** (no API key in this environment). Prompt quality, latency and real structured-output behaviour are unverified.
+- **Browser end-to-end** against a live Supabase project: pages compile and their queries are type-checked, but they were not clicked through.
+- Phase 2 criteria 7 and 9 remain unverified live (see IMPLEMENTATION_STATUS.md).
