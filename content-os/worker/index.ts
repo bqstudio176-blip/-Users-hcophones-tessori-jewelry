@@ -3,9 +3,12 @@
  *
  *   npm run worker
  *
- * Polls the Postgres-backed queue (claim_analysis_job, FOR UPDATE SKIP LOCKED),
- * processes one job at a time per process, and scales horizontally by running
- * more processes. Requires ffmpeg/ffprobe on PATH.
+ * Polls two Postgres-backed queues (FOR UPDATE SKIP LOCKED): video analyses
+ * (claim_analysis_job) and Video Studio jobs — asset processing, voiceover
+ * transcription and rendering (claim_video_job). One job at a time per
+ * process; scale horizontally by running more processes. WORKER_QUEUES
+ * ("analysis,video" by default) lets you dedicate processes, e.g. to renders.
+ * Requires ffmpeg/ffprobe (with libass) and a font such as DejaVu Sans.
  */
 import { hostname } from "node:os";
 import pg from "pg";
@@ -13,6 +16,7 @@ import { ClaudeAnalysisModel, DEFAULT_ANALYSIS_MODEL } from "@/server/analysis/a
 import { claimJob, processJob, type PipelineDeps } from "@/server/analysis/pipeline";
 import { LocalMediaStore, SupabaseMediaStore, type MediaStore } from "@/server/analysis/storage";
 import { OpenAIWhisperProvider } from "@/server/analysis/transcription/openai-whisper";
+import { claimVideoJob, processVideoJob, type VideoWorkerDeps } from "@/server/video/worker";
 
 function required(name: string): string {
   const v = process.env[name];
@@ -45,6 +49,9 @@ async function main() {
       ? new ClaudeAnalysisModel(process.env.ANALYSIS_MODEL ?? DEFAULT_ANALYSIS_MODEL, { apiKey: anthropicKey, fallbacks: process.env.ANTHROPIC_DISABLE_FALLBACKS !== "1" })
       : null,
   };
+  const videoDeps: VideoWorkerDeps = { pool, store: deps.store, transcriber: deps.transcriber, workerId, fontsDir: process.env.WORKER_FONTS_DIR ?? null };
+  const queues = new Set((process.env.WORKER_QUEUES ?? "analysis,video").split(",").map((q) => q.trim()));
+  console.log(`[worker] queues: ${[...queues].join(", ")}`);
   console.log(`[worker] ${workerId} started · transcription: ${deps.transcriber ? "openai whisper-1" : "NOT CONFIGURED"} · AI: ${deps.model ? deps.model.model : "NOT CONFIGURED"}`);
 
   let stopping = false;
@@ -56,23 +63,44 @@ async function main() {
   process.on("SIGINT", stop);
 
   while (!stopping) {
-    let job = null;
-    try {
-      job = await claimJob(pool, workerId);
-    } catch (e) {
-      console.error("[worker] claim failed:", (e as Error).message);
+    let worked = false;
+    if (queues.has("analysis")) {
+      let job = null;
+      try {
+        job = await claimJob(pool, workerId);
+      } catch (e) {
+        console.error("[worker] analysis claim failed:", (e as Error).message);
+      }
+      if (job) {
+        worked = true;
+        const started = Date.now();
+        console.log(`[worker] analysis job ${job.id} (analysis ${job.analysis_id}) attempt ${job.attempts}`);
+        const outcome = await processJob(job, deps).catch((e) => {
+          console.error(`[worker] job ${job!.id} crashed:`, (e as Error).message);
+          return "crashed";
+        });
+        console.log(`[worker] analysis job ${job.id} → ${outcome} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+      }
     }
-    if (!job) {
-      await new Promise((r) => setTimeout(r, pollMs));
-      continue;
+    if (!stopping && queues.has("video")) {
+      let vjob = null;
+      try {
+        vjob = await claimVideoJob(pool, workerId);
+      } catch (e) {
+        console.error("[worker] video claim failed:", (e as Error).message);
+      }
+      if (vjob) {
+        worked = true;
+        const started = Date.now();
+        console.log(`[worker] video ${vjob.kind} job ${vjob.id} attempt ${vjob.attempts}`);
+        const outcome = await processVideoJob(vjob, videoDeps).catch((e) => {
+          console.error(`[worker] video job ${vjob!.id} crashed:`, (e as Error).message);
+          return "crashed";
+        });
+        console.log(`[worker] video job ${vjob.id} → ${outcome} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+      }
     }
-    const started = Date.now();
-    console.log(`[worker] job ${job.id} (analysis ${job.analysis_id}) attempt ${job.attempts}`);
-    const outcome = await processJob(job, deps).catch((e) => {
-      console.error(`[worker] job ${job!.id} crashed:`, (e as Error).message);
-      return "crashed";
-    });
-    console.log(`[worker] job ${job.id} → ${outcome} in ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    if (!worked) await new Promise((r) => setTimeout(r, pollMs));
   }
   await pool.end();
 }

@@ -14,6 +14,8 @@ export interface TranscriptResult {
   text: string;
   durationSeconds: number | null;
   segments: TranscriptSegment[];
+  /** Word-level timestamps, present only when requested and supported. */
+  words?: { startMs: number; endMs: number; text: string }[];
 }
 
 export interface TranscriptionProvider {
@@ -21,5 +23,5 @@ export interface TranscriptionProvider {
   model: string;
   /** Whether segments include speaker labels. */
   supportsSpeakers: boolean;
-  transcribe(audioFile: string, opts?: { language?: string }): Promise<TranscriptResult>;
+  transcribe(audioFile: string, opts?: { language?: string; wordTimestamps?: boolean }): Promise<TranscriptResult>;
 }

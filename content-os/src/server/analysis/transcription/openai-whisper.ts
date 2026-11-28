@@ -10,6 +10,7 @@ interface VerboseJson {
   duration?: number;
   text?: string;
   segments?: Array<{ start: number; end: number; text: string; avg_logprob?: number; no_speech_prob?: number }>;
+  words?: Array<{ word: string; start: number; end: number }>;
 }
 
 /**
@@ -24,7 +25,7 @@ export class OpenAIWhisperProvider implements TranscriptionProvider {
 
   constructor(private apiKey: string, private fetchImpl: typeof fetch = fetch) {}
 
-  async transcribe(audioFile: string, opts: { language?: string } = {}): Promise<TranscriptResult> {
+  async transcribe(audioFile: string, opts: { language?: string; wordTimestamps?: boolean } = {}): Promise<TranscriptResult> {
     const size = (await stat(audioFile)).size;
     if (size > MAX_AUDIO_BYTES) throw new PermanentError("Extracted audio exceeds the transcription provider's 25 MB limit");
     const form = new FormData();
@@ -32,6 +33,7 @@ export class OpenAIWhisperProvider implements TranscriptionProvider {
     form.set("model", this.model);
     form.set("response_format", "verbose_json");
     form.append("timestamp_granularities[]", "segment");
+    if (opts.wordTimestamps) form.append("timestamp_granularities[]", "word");
     if (opts.language) form.set("language", opts.language);
 
     let res: Response;
@@ -64,6 +66,9 @@ export class OpenAIWhisperProvider implements TranscriptionProvider {
         speaker: null,
         confidence: typeof s.avg_logprob === "number" ? Math.round(Math.min(1, Math.exp(s.avg_logprob)) * 1e5) / 1e5 : null,
       })),
+      ...(opts.wordTimestamps && Array.isArray(json.words)
+        ? { words: json.words.map((w) => ({ startMs: Math.max(0, Math.round(w.start * 1000)), endMs: Math.max(0, Math.round(w.end * 1000)), text: String(w.word).trim() })) }
+        : {}),
     };
   }
 }

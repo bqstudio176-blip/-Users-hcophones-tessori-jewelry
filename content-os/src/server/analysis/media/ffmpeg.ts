@@ -128,3 +128,56 @@ export async function detectSceneCuts(input: string, metadataFile: string, thres
 export async function extractFrame(input: string, timeSeconds: number, output: string, width: number = ANALYSIS_LIMITS.frameWidth): Promise<void> {
   await run("ffmpeg", ["-nostdin", "-y", "-v", "error", "-ss", timeSeconds.toFixed(3), "-i", input, "-frames:v", "1", "-vf", `scale=${width}:-2`, "-q:v", "4", output], 60_000);
 }
+
+// ---------------------------------------------------------------------------
+// Video Studio helpers (same execFile wrapper: argument arrays, timeouts)
+// ---------------------------------------------------------------------------
+
+/** Runs ffmpeg with a prepared argument array. `signal` aborts (kills) the process. */
+export async function runFfmpeg(args: string[], opts: { timeoutMs: number; signal?: AbortSignal }): Promise<{ stdout: string; stderr: string }> {
+  try {
+    const r = await exec("ffmpeg", args, { timeout: opts.timeoutMs, maxBuffer: 32 * 1024 * 1024, windowsHide: true, signal: opts.signal });
+    return { stdout: String(r.stdout), stderr: String(r.stderr) };
+  } catch (err) {
+    const e = err as { stderr?: string; killed?: boolean; code?: unknown; name?: string; message: string };
+    if (e.name === "AbortError" || opts.signal?.aborted) throw new Error("ffmpeg aborted");
+    if (e.killed) throw new Error(`ffmpeg timed out after ${opts.timeoutMs} ms`);
+    if (e.code === "ENOENT") throw new PermanentError("ffmpeg is not installed on the worker");
+    const tail = (e.stderr ?? "").trim().split("\n").slice(-4).join(" | ");
+    throw new Error(`ffmpeg failed: ${tail || e.message}`.slice(0, 800));
+  }
+}
+
+/** Parses the summary printed by the ebur128 filter (last occurrence wins). */
+export function parseEbur128(stderr: string): { integratedLufs: number | null; truePeakDb: number | null } {
+  const i = [...stderr.matchAll(/I:\s+(-?[\d.]+|-inf) LUFS/g)].pop()?.[1];
+  const p = [...stderr.matchAll(/Peak:\s+(-?[\d.]+|-inf) dBFS/g)].pop()?.[1];
+  const num = (s: string | undefined) => (s === undefined ? null : s === "-inf" ? -120 : Number(s));
+  return { integratedLufs: num(i), truePeakDb: num(p) };
+}
+
+export async function measureLoudness(file: string, timeoutMs = 5 * 60_000): Promise<{ integratedLufs: number | null; truePeakDb: number | null }> {
+  const { stderr } = await run("ffmpeg", ["-nostdin", "-hide_banner", "-nostats", "-i", file, "-vn", "-af", "ebur128=peak=true", "-f", "null", "-"], timeoutMs);
+  return parseEbur128(String(stderr));
+}
+
+/** Low-resolution H.264/AAC proxy for smooth browser preview. */
+export async function makeVideoProxy(input: string, output: string, timeoutMs = 15 * 60_000): Promise<void> {
+  await run("ffmpeg", ["-nostdin", "-y", "-v", "error", "-i", input, "-vf", "scale='min(540,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "30", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "64k", "-ac", "2", "-movflags", "+faststart", output], timeoutMs);
+}
+
+/** AAC proxy so recordings in any browser format play everywhere. */
+export async function makeAudioProxy(input: string, output: string, timeoutMs = 10 * 60_000): Promise<void> {
+  await run("ffmpeg", ["-nostdin", "-y", "-v", "error", "-i", input, "-vn", "-c:a", "aac", "-b:a", "128k", "-ac", "2", "-ar", "48000", "-f", "mp4", output], timeoutMs);
+}
+
+/** JPEG thumbnail from a video frame or an image. */
+export async function makeThumbnail(input: string, output: string, atSeconds: number | null, width = 480): Promise<void> {
+  const seek = atSeconds !== null ? ["-ss", atSeconds.toFixed(3)] : [];
+  await run("ffmpeg", ["-nostdin", "-y", "-v", "error", ...seek, "-i", input, "-frames:v", "1", "-vf", `scale='min(${width},iw)':-2`, "-q:v", "4", output], 60_000);
+}
+
+/** Normalises an image (any supported format/orientation) to a JPEG the renderer can loop. */
+export async function normaliseImage(input: string, output: string, maxSide = 2160): Promise<void> {
+  await run("ffmpeg", ["-nostdin", "-y", "-v", "error", "-i", input, "-frames:v", "1", "-vf", `scale='if(gt(iw,ih),min(${maxSide},iw),-2)':'if(gt(iw,ih),-2,min(${maxSide},ih))'`, "-q:v", "2", output], 120_000);
+}
