@@ -1,0 +1,34 @@
+name: content-os CI
+
+on:
+  push:
+    paths: ["content-os/**", ".github/workflows/content-os-ci.yml"]
+  pull_request:
+    paths: ["content-os/**", ".github/workflows/content-os-ci.yml"]
+
+defaults:
+  run:
+    working-directory: content-os
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: content-os/package-lock.json
+      - name: Install ffmpeg (analysis pipeline tests use real ffmpeg)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: npm ci
+      - run: npm run typecheck
+      # Unit + DB suites. The DB suite starts a throwaway PostgreSQL cluster
+      # from the runner's preinstalled PostgreSQL binaries.
+      - run: npm test
+      - run: npm run build
