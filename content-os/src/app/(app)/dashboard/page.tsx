@@ -30,7 +30,7 @@ export default async function DashboardPage() {
   const canManage = can(ctx.role, "settings.update");
 
   // All reads go through the user's RLS-scoped client.
-  const [settingsRes, membersRes, subRes, creditsRes, txnRes, socialRes, auditRes, invitesRes, scriptsRes] = await Promise.all([
+  const [settingsRes, membersRes, subRes, creditsRes, txnRes, socialRes, auditRes, invitesRes, scriptsRes, videosRes] = await Promise.all([
     supabase.from("workspace_settings").select("*").eq("workspace_id", wsId).maybeSingle(),
     supabase.from("workspace_members").select("user_id", { count: "exact", head: true }).eq("workspace_id", wsId),
     supabase.from("subscriptions").select("*, plan:plans(*)").eq("workspace_id", wsId).maybeSingle(),
@@ -50,6 +50,7 @@ export default async function DashboardPage() {
           .gt("expires_at", new Date().toISOString())
       : Promise.resolve({ count: 0, error: null }),
     supabase.from("scripts").select("id", { count: "exact", head: true }).eq("workspace_id", wsId),
+    supabase.from("video_projects").select("id", { count: "exact", head: true }).eq("workspace_id", wsId),
   ]);
 
   const firstError = [settingsRes, membersRes, subRes, creditsRes, txnRes, socialRes, auditRes].find((r) => r.error)?.error;
@@ -206,7 +207,7 @@ export default async function DashboardPage() {
         <Card className="lg:col-span-2">
           <CardHeader>
             <CardTitle>Content production</CardTitle>
-            <CardDescription>Script Lab is live. Video Studio and Publish metrics appear once those modules are released.</CardDescription>
+            <CardDescription>Script Lab and Video Studio are live. Publish metrics appear once that module is released.</CardDescription>
           </CardHeader>
           <CardContent className="grid gap-3 sm:grid-cols-3">
             <Link href="/script-lab" className="rounded-md border border-line p-4 hover:border-line-strong">
@@ -214,8 +215,12 @@ export default async function DashboardPage() {
               <p className="mt-1 text-2xl font-semibold tabular-nums text-fg">{scriptsRes.count ?? 0}</p>
               <Badge className="mt-3" tone="success">Available</Badge>
             </Link>
+            <Link href="/video-studio" className="rounded-md border border-line p-4 hover:border-line-strong">
+              <p className="text-xs text-fg-muted">Videos</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums text-fg">{videosRes.count ?? 0}</p>
+              <Badge className="mt-3" tone="success">Available</Badge>
+            </Link>
             {[
-              { label: "Videos", href: "/video-studio" },
               { label: "Published posts", href: "/publish" },
             ].map((item) => (
               <Link key={item.label} href={item.href} className="rounded-md border border-dashed border-line p-4 hover:border-line-strong">

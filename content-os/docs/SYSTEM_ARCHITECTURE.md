@@ -120,3 +120,28 @@ Browser ──upload (signed-in, RLS-checked)──▶ Supabase Storage (private
 2. **No server-side video download from URLs.** Imported Instagram and YouTube links are checked for accessibility (HEAD / oEmbed) and enriched with metadata. Analysis requires the user to upload the file. This follows the brief's "do not promise unrestricted downloading", platform terms, and SSRF prevention.
 3. **Whisper for transcription** (the brief's example); speaker diarization is not available from `whisper-1`.
 4. **Uploads go straight from the browser to Storage**, using the signed-in user's client restricted by an RLS policy to the path reserved by `begin_reference_upload()`. The web server never proxies large files and never uses the service role for uploads.
+
+## 9. Phase 4 additions: Video Studio
+
+```
+Browser ──upload / recording (RLS-reserved path)──▶ Storage  <ws>/assets/<asset>/…
+   │                                                         ▲
+   ├─ editor (client): timeline state, approximate preview   │ proxies, thumbnails, renders
+   │   from proxies, captions/alignment computed locally     │
+   └─▶ server actions ── save_video_timeline (optimistic) ── Postgres
+                       ── request_render (charges credits) ─▶ video_jobs ◀── claim (SKIP LOCKED)
+                                                                 │
+                      Worker (same process as analyses; WORKER_QUEUES):
+                        asset:     validate (magic bytes) → probe → proxy/thumbnail
+                        voiceover: extract audio → Whisper (word timestamps) → compare with script
+                        render:    prepare media → build ASS + ffmpeg plan → encode → measure → upload
+```
+
+- **Rendering is a pure function of the timeline.** `buildRenderPlan()` turns the zod-validated timeline into an ffmpeg argument array. User text never enters the filter graph: on-screen text, captions and the draft watermark are written to an ASS subtitle file (escaped) and drawn by libass.
+- **Captions** are timed from measured word timestamps when a transcribed voiceover exists. Otherwise they are estimated from scene durations and labelled as estimates.
+- **Checks** run after each render from ffprobe/ebur128 measurements of the output and the timeline. No AI is involved. "Ready to publish" is gated on a final render of the current timeline with no failing checks.
+- **Credits:** final renders cost 3 credits up to 60 s, plus 1 per extra 30 s. They are charged when queued and refunded exactly once on failure or cancel. Drafts are free and limited to 10 per hour.
+- **Long encodes** keep heart-beating every 5 s. A user cancel aborts the ffmpeg process via `AbortSignal`.
+
+### Phase 4 deviations
+See docs/PHASE_4_VIDEO_STUDIO_PROPOSAL.md §13.

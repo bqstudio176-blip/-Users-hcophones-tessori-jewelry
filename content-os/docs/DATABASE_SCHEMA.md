@@ -174,3 +174,50 @@ Every tenant table has `workspace_id`, RLS and a scope trigger that rejects cros
 ## Privileges
 
 Clients get column-level `insert`/`update` grants only on user-editable columns. `credits_charged`, `version`, `status`, `approved_by` and `current_version` are written only by RPCs or triggers. `ai_agent_runs`, `script_versions` and `creative_rule_versions` reject update and delete even for `service_role`.
+
+---
+
+# Phase 4 — Video Studio
+
+Migrations:
+- `20261128001200_video_studio_schema.sql`: enums, tables, scope triggers
+- `20261128001300_video_studio_functions_rls.sql`: functions, RLS, grants, storage policies, render feedback target
+
+## Tables
+
+| Table | Purpose / key columns |
+|---|---|
+| `media_storage_limits` | Per plan: `max_bytes` (free 2 GB, creator 25 GB, studio 150 GB) and `draft_renders_per_hour` (10) |
+| `media_assets` | User-owned media: `kind` (video/image/audio), `origin` (upload/recording), `storage_path` (reserved), mime, size, sha256 (verified by the worker), `status` (pending_upload → processing → ready / failed), ffprobe `metadata`, duration, width/height (rotation-aware), `has_audio`, `thumbnail_path`, `proxy_path`, tags, **`rights_confirmed_by/at`** (required) |
+| `video_projects` | `script_id`, `script_version` plus `script_snapshot`, title, `format` (vertical/square/portrait), fps 30, `status` (draft/ready/archived), **`timeline` jsonb** with optimistic **`timeline_version`**, `ready_render_id/at/by` |
+| `video_project_assets` | (project, asset) links for the current timeline, maintained by the save RPCs. FK `restrict` blocks deleting media in use. |
+| `video_timeline_versions` | Append-only snapshots: `source` (created, manual, render, before_restore, restored, script_update), note |
+| `voiceover_takes` | project, asset, `scene_key` (null = whole script), `status` (pending, transcribing, completed, unavailable, failed), `transcript` ({text, words[start,end,text]}), `deviation` ({similarity, missing, extra}) |
+| `video_renders` | `kind` (draft/final), `status`, exact `timeline` snapshot and `timeline_version`, `duration_seconds`, `output_path`, `srt_path`, measured `stats`, deterministic `checks`, `credits_charged`, `credits_refunded`. At most one active render per project. |
+| `video_jobs` | Queue for `asset`, `voiceover` and `render` jobs. Same columns as `analysis_jobs`: steps, attempts, `run_after`, `locked_by`, heartbeat, cancel flag, idempotency key. |
+
+## Functions (all `SECURITY DEFINER`, `search_path = ''`)
+
+| Function | Caller | Behaviour |
+|---|---|---|
+| `video_limits()`, `render_credit_cost(kind, seconds)`, `video_timeline_duration(timeline)` | any | Single sources of truth for limits and pricing (final: 3 credits + 1 per started 30 s over 60 s; drafts 0) |
+| `begin_media_upload(ws, kind, mime, size, title, rights, origin)` | member | Rights required; mime allow-list per kind; ≤ 1 GB; plan quota (serialised per workspace, `54000`); reserves `<ws>/assets/<id>/<uuid>.<ext>` |
+| `complete_media_upload(asset, sha)` | member | Requires the storage object; queues an `asset` job |
+| `create_video_project(script, title, format, timeline)` | member | Snapshots the script server-side; checks the timeline; version 1 |
+| `save_video_timeline(project, timeline, expected_version, snapshot, note)` | member | `40001` on a stale version; structure and limits checked; asset ownership and readiness verified; links synced; `ready` → `draft` |
+| `update_video_from_script(project, timeline, expected_version)` | member | Snapshot, save the merged timeline, re-snapshot the script |
+| `restore_video_timeline(project, version_id)` | member | Snapshot current, then restore |
+| `set_video_project_archived(project, bool)` | member | Archive or unarchive (clears ready) |
+| `add_voiceover_take(project, asset, scene_key)` | member | Audio or video assets of the workspace only; queues a `voiceover` job |
+| `request_render(project, kind, idempotency_key)` | member | Idempotent; one active render per project; draft rate limit; charges credits atomically (`P0001` rolls everything back); snapshots the timeline |
+| `cancel_render(render)` | requester or owner/admin | Queued → canceled and refunded; running → cancel flag |
+| `mark_video_ready(project, render)` | member | Requires a completed final render of the current timeline version with checks `pass`/`warn` |
+| `claim_video_job`, `heartbeat_video_job`, `defer_video_job`, `finish_video_job`, `fail_video_job`, `cancel_running_video_job`, `refund_render_credits` | service_role | Worker lifecycle. Failures retry with backoff, then fail. Renders are refunded exactly once. `defer` re-queues without consuming an attempt. |
+
+## Storage
+
+The `media` bucket allows files up to 1 GB, plus image, audio and `text/plain` (SRT) types. Inserts are allowed only to a reserved path (reference or asset in `pending_upload`). Members can delete objects only once their reference, asset, analysis or render row is gone.
+
+## Privileges
+
+Clients can update only `media_assets.title/tags` and `video_projects.title`, and can delete assets, projects and takes subject to policies. Every other write goes through RPCs. `video_timeline_versions` rejects update and delete even for `service_role`. `script_feedback.target_type` gains `video_render`.

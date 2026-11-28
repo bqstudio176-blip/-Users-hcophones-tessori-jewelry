@@ -19,12 +19,16 @@ export function dbErrorMessage(error: { code?: string; message?: string } | null
     case "54000":
       if (/member limit/.test(msg)) return "Your plan's member limit has been reached.";
       if (/workspace limit/.test(msg)) return "You have reached the maximum number of workspaces.";
+      if (/storage quota/.test(msg)) return "Your plan's media storage is full. Delete unused files or upgrade your plan.";
+      if (/draft render limit/.test(msg)) return "You've reached the hourly limit for draft renders. Try again later.";
       return "A limit has been reached.";
     case "22023":
       return msg ? msg.charAt(0).toUpperCase() + msg.slice(1) + "." : fallback;
     case "P0001":
       if (/insufficient credits/.test(msg)) return "Not enough credits.";
       return fallback;
+    case "40001":
+      return "Someone else changed this in the meantime. Reload and try again.";
     case "P0002":
       return "Not found.";
     default:

@@ -105,3 +105,19 @@ Tokens never reach the browser. Error messages from Instagram are logged without
 | P2-4 | Live provider behaviour (Claude, Whisper, YouTube, Instagram, Supabase Storage) not verified | High (verification, not a known flaw) | See IMPLEMENTATION_STATUS.md Phase 2 checklist. |
 
 No known critical- or high-severity security flaw remains open in the Phase 2 code. P2-4 is a verification gap, not a known flaw.
+
+## 10. Phase 4 controls: Video Studio
+
+| Threat | Control |
+|---|---|
+| Uploading someone else's footage or music | Rights confirmation is required per upload and stored (`rights_confirmed_by/at`). No stock media or music catalogue. No URL downloads. |
+| Disguised or malicious files | Mime allow-list per kind in `begin_media_upload`; magic-byte sniffing in the browser and again on the worker; ffprobe must succeed before an asset is `ready`. Files are only ever read by ffmpeg/ffprobe. |
+| Command or filter-graph injection | ffmpeg runs via `execFile` with argument arrays. Numbers come from the zod-validated timeline. All user text goes into an ASS file whose override characters are neutralised (`assEscape`); filter-file paths are escaped. |
+| Cross-tenant media use | `_video_sync_assets` verifies every referenced asset and take belongs to the project's workspace (and is ready). Scope triggers on every table. RLS on all tables. Storage paths start with the workspace id. |
+| Resource abuse | 1 GB / 10 min per asset; plan storage quotas; 3-minute output; 60 scenes; one active render per video; draft renders limited per hour; per-render timeout; separate render workers possible. |
+| Overwriting someone's edits | Optimistic `timeline_version` on every save (conflict = `40001`, nothing overwritten); restore and script updates snapshot first; history append-only even for `service_role`. |
+| Deleting media in use | `video_project_assets` + voiceover references block deletion (RLS policy and FK `restrict`). Storage objects are deletable only once their rows are gone. |
+
+### Phase 4 residual risks
+- The Supabase project-wide upload limit must be raised to 1 GB for large files (an operator setting).
+- Rendering is CPU-bound on the worker; heavy concurrent use needs more or larger render workers.

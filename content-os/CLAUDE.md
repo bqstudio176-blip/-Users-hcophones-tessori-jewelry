@@ -40,5 +40,12 @@ Every schema or policy change needs a DB test in `tests/db/` that runs queries t
 - Recommendations carry provenance (`observed` with a cited id, `user`, or `hypothesis`). Never present a hypothesis as fact or promise performance.
 - Bump the version in `src/server/creative/prompts.ts` whenever a prompt changes. Never edit an applied seed migration; add a new one.
 
+## Video Studio rules
+- Only user-owned media: uploads need a rights confirmation. Never add URL downloads, stock media or a music catalogue.
+- Never interpolate user text into an ffmpeg filter graph. Text goes through `buildAss()` / `assEscape()`; the render plan comes from `buildRenderPlan()` on a zod-validated timeline.
+- Timeline saves go through `save_video_timeline` with the expected version. Never overwrite on conflict.
+- Measured facts (durations, loudness, resolution) come from ffprobe/ebur128. Estimated caption timing must be labelled as estimated.
+- Render credits are charged by `request_render` and refunded only by the worker/RPC failure paths (exactly once).
+
 ## Phase boundary
-Phases 1 (Foundation), 2 (Discover & Analyze) and 3 (Script Lab & Creative Intelligence) are implemented. **Do not start Phase 4 without explicit authorization.**
+Phases 1 (Foundation), 2 (Discover & Analyze), 3 (Script Lab & Creative Intelligence) and 4 (Video Studio) are implemented. **Do not start Phase 5 without explicit authorization.**

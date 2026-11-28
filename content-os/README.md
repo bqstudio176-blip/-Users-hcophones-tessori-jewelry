@@ -5,6 +5,7 @@ A multi-tenant SaaS for short-form content teams.
 - **Phase 1 (Foundation):** authentication, workspaces and roles, dashboard, settings, Instagram connection foundation, plans and credit ledger, admin panel.
 - **Phase 2 (Discover & Analyze):** reference library, multi-source discovery, URL and video import, and a background AI video analysis engine (transcription, scene detection, structured reports).
 - **Phase 3 (Script Lab & Creative Intelligence):** creative projects, Strategy Builder with provenance-labelled recommendations, a 110-rule Creative Rules Engine with explainable selection, Hook Generator, Script Lab (structured scripts, scene editor, AI edit proposals, versions), Quality Agent, feedback and approved preferences, and AI usage and credit tracking.
+- **Phase 4 (Video Studio):** media library for footage you own, video projects built from scripts, a scene timeline (trim, fit, crossfades, on-screen text), voiceover recording with a teleprompter and transcription, captions timed from the voiceover (burned in and SRT), music with automatic ducking, draft and final renders on the worker, deterministic pre-publish checks, and versioned timelines.
 
 > This directory is self-contained. The repository root also holds a separate, pre-existing static site (Tessori Jewelry), which is untouched.
 
@@ -13,7 +14,7 @@ A multi-tenant SaaS for short-form content teams.
 | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) | What is done, what is not, acceptance criteria |
 | [TEST_REPORT.md](TEST_REPORT.md) | Test inventory, results, what is *not* covered |
 | [CHANGELOG.md](CHANGELOG.md) | Release notes |
-| [docs/](docs/) | Product spec, architecture, database schema, security plan (drafts awaiting approval), [API integrations](docs/API_INTEGRATIONS.md), [AI architecture](docs/AI_ARCHITECTURE.md), [creative rules](docs/CREATIVE_RULES_DOCUMENTATION.md) |
+| [docs/](docs/) | Product spec, architecture, database schema, security plan (drafts awaiting approval), [API integrations](docs/API_INTEGRATIONS.md), [AI architecture](docs/AI_ARCHITECTURE.md), [creative rules](docs/CREATIVE_RULES_DOCUMENTATION.md), [Phase 4 Video Studio scope](docs/PHASE_4_VIDEO_STUDIO_PROPOSAL.md) |
 
 ## Stack
 
@@ -80,20 +81,25 @@ The DB suite runs `scripts/local-db.sh`. It creates a temporary cluster from the
 
 Any Node host works the same way (`npm ci && npm run build && npm start`).
 
-### 3. Analysis worker (Phase 2)
+### 3. Worker (analyses and Video Studio)
 
-The web app only queues analyses. A separate long-running worker processes them.
+The web app only queues work. A separate long-running worker processes video analyses (Phase 2) and Video Studio jobs (Phase 4): asset processing, voiceover transcription and rendering.
 
-1. Build and run `worker/Dockerfile` (Node 22 + ffmpeg) on any container host: Fly.io, Render, Railway, ECS or Cloud Run jobs. **Don't** run it on a serverless function, because jobs take up to several minutes.
+1. Build and run `worker/Dockerfile` (Node 22 + ffmpeg with libass + DejaVu fonts) on any container host: Fly.io, Render, Railway, ECS or Cloud Run jobs. **Don't** run it on a serverless function, because jobs take up to several minutes.
 2. Set these on the worker:
    - `DATABASE_URL`: Supabase direct connection string, server-only
    - `NEXT_PUBLIC_SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`: for storage
    - `ANTHROPIC_API_KEY`: required for analyses to complete
-   - optional: `OPENAI_API_KEY` for transcripts, and `ANALYSIS_MODEL` (default `claude-opus-5-5`)
+   - optional: `OPENAI_API_KEY` for transcripts and voiceover word timing, and `ANALYSIS_MODEL` (default `claude-opus-5-5`)
+   - optional: `WORKER_QUEUES` (`analysis,video` by default) to dedicate processes, e.g. `video` for render workers; `WORKER_FONTS_DIR` to add caption fonts
 3. Scale by running more worker processes; jobs are claimed safely in parallel. A stuck job is reclaimed after 10 minutes without a heartbeat.
 4. Optional, on the web app: set `YOUTUBE_API_KEY` to enable YouTube search and trending.
 
-Limits: MP4, MOV or WebM; at most 200 MB and 10 minutes; at most 40 scenes and 24 analyzed frames per video. Each analysis costs 5 workspace credits, refunded if it fails or is cancelled. See [docs/API_INTEGRATIONS.md](docs/API_INTEGRATIONS.md) for provider costs and quotas.
+Rendering is CPU-heavy: on 2 vCPU, a 1080×1920 final render takes roughly 1–3× the video length. Give render workers enough CPU.
+
+**Supabase Storage:** Video Studio accepts files up to 1 GB. Supabase's project-wide upload limit (Storage settings) must be at least that, or uploads fail before reaching the app. The Free tier caps it at 50 MB.
+
+Analysis limits: MP4, MOV or WebM; at most 200 MB and 10 minutes; at most 40 scenes and 24 analyzed frames per video. Each analysis costs 5 workspace credits, refunded if it fails or is cancelled. See [docs/API_INTEGRATIONS.md](docs/API_INTEGRATIONS.md) for provider costs and quotas.
 
 ### 4. Instagram (optional)
 
@@ -122,6 +128,7 @@ content-os/
   src/server/discovery/  discovery providers (library, YouTube, Instagram) + registry
   src/server/analysis/   worker pipeline: ffmpeg, scenes, transcription, Claude, report
   src/server/creative/   creative engine: orchestrator, agents (prompts/schemas), rules library + selection, validators
+  src/server/video/      Video Studio: timeline schema, captions/ASS, ffmpeg render plan, checks, worker jobs
   worker/                worker entry point + Dockerfile
   tests/unit, tests/db   Vitest suites (tests/fixtures: generated videos, mock providers)
 ```

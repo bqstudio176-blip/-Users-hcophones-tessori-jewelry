@@ -2,6 +2,19 @@
 
 All notable changes to Content OS. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0] — 2026-11-28 — Phase 4: Video Studio
+
+### Added
+- **Database** (migrations 1200–1300): media assets with plan storage quotas and rights confirmation; video projects built from scripts (script snapshot) with an optimistic-concurrency timeline; asset links that block deleting media in use; append-only timeline versions; voiceover takes with word-level transcripts and script deviation; renders with measured stats and checks; a `video_jobs` queue for asset processing, transcription and rendering; RPCs, RLS, storage policies; feedback on renders.
+- **Engine** (`src/server/video`): timeline schema and validation; script merge with diff; voiceover-to-scene alignment; captions from measured word timings, or estimated (and labelled); ASS generation with escaped user text; SRT export; pure ffmpeg render plan (fill/fit-blur, Ken Burns, crossfades, clip audio, voice, looping music with ducking, loudness normalisation, draft watermark); deterministic pre-publish checks; render pricing.
+- **Worker:** Video Studio jobs alongside analyses (`WORKER_QUEUES`): magic-byte validation, ffprobe, proxies and thumbnails; Whisper transcription with word timestamps; draft and final renders with step progress, heartbeats during encodes, cancellation, retries and exactly-once refunds. The worker image gains libass fonts.
+- **UI:** Video Studio dashboard (videos, storage, render credits, new video from script), media library (multi-file upload, filters, detail with preview, rename, tags, delete), editor (scene list, approximate live preview with safe-zone guides, scene inspector, voiceover, music and captions panels, versioned saves with conflict detection), voiceover recorder with teleprompter and take review, render and checks page (progress, cancel, downloads, mark ready, feedback), timeline versions and update from script. Navigation enabled; "Make video" in Script Lab; Videos tile on the dashboard; billing copy.
+- **Tests:** 45 new (405 total), including real-ffmpeg renders measured for resolution, codecs and loudness.
+- **Docs:** Phase 4 sections in the status, test report, schema, architecture, security and API documents; the approved scope with implementation notes in `docs/PHASE_4_VIDEO_STUDIO_PROPOSAL.md`.
+
+### Fixed
+- Documented `CREATIVE_EFFORT` default corrected to `medium` (the code default).
+
 ## [0.3.0] — 2026-11-27 — Phase 3: Script Lab & AI Creative Intelligence Engine
 
 ### Added

@@ -1,6 +1,6 @@
 # Phase 4 Proposal — Video Studio
 
-> **Status: PROPOSAL, awaiting product-owner approval. No code has been written for Phase 4.**
+> **Status: APPROVED on 2026-11-28 with the recommended decisions D1–D5, and IMPLEMENTED.** See IMPLEMENTATION_STATUS.md (Phase 4) for what was built and the deviations listed at the end of this document.
 > No Phase 4 brief existed. The product owner asked for a scope defined from the product sequence (Discover → Analyze → Script Lab → **Video Studio** → Experiments → Publish → Analytics) and the existing architecture. Open decisions are in §11.
 
 ## 1. Goal
@@ -160,3 +160,12 @@ RPCs: `begin_media_upload`, `complete_media_upload`, `save_video_timeline` (opti
 - **Whisper** (`OPENAI_API_KEY`) is needed for voiceover-timed captions. Without it, captions fall back to estimated timing.
 - **Live verification:** as with Phases 2 and 3, live Supabase Storage and the live providers are not available in the build environment. Renders, however, can be fully tested for real with ffmpeg.
 - Browser recording relies on MediaRecorder: Safari codec differences are handled by uploading and transcoding on the worker.
+
+## 13. Implementation notes and deviations (added after approval)
+
+- **One queue for all Video Studio work.** `video_jobs` (kind `asset` | `voiceover` | `render`) replaces the proposed `render_jobs`. Asset processing and transcription use the same claim, heartbeat, retry and cancel machinery as renders.
+- **The current timeline lives on `video_projects.timeline`** (with an optimistic `timeline_version`) instead of a separate `video_timelines` table. History is in `video_timeline_versions`, as proposed.
+- **Asset references are tracked in `video_project_assets`**, kept in sync by every save. It enforces workspace ownership and blocks deleting media a timeline still uses.
+- **Usage page:** render usage and credits appear on the Video Studio dashboard and in the credit ledger (Settings → Plan & usage). The Script Lab "AI usage" page was not renamed.
+- **Progress:** steps only. The encoder's percentage is not shown, because it would not be reliable.
+- **Timeline versions on render:** every render snapshots the timeline (`source = render`), so a render can always be traced to an exact version.

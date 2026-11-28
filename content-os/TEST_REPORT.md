@@ -201,3 +201,47 @@ _Run date: 2026-11-27 · Node 22 · PostgreSQL 16 (local throwaway cluster) · V
 - **Live Claude calls** (no API key in this environment). Prompt quality, latency and real structured-output behaviour are unverified.
 - **Browser end-to-end** against a live Supabase project: pages compile and their queries are type-checked, but they were not clicked through.
 - Phase 2 criteria 7 and 9 remain unverified live (see IMPLEMENTATION_STATUS.md).
+
+---
+
+# Phase 4 Test Report: Video Studio
+
+_Run date: 2026-11-28 · Node 22 · PostgreSQL 16 (local throwaway cluster) · ffmpeg 6.1 with libass · Vitest 5.1.1 · Chromium (Playwright)_
+
+## Summary
+
+| Check | Command | Result |
+|---|---|---|
+| Unit + DB tests | `npm test` | ✅ **405 passed, 0 failed** (29 files; 45 new) |
+| Type check | `npx tsc --noEmit` | ✅ no errors |
+| Production build | `npm run build` | ✅ compiled; 8 new Video Studio routes plus the SRT API route |
+| Real worker smoke test | `npm run worker` (local DB + local media store) | ✅ asset job claimed and processed (thumbnail + proxy) |
+| Editor in a real browser | esbuild bundle of `VideoEditor` + Playwright, server actions stubbed | ✅ playback, media assignment, voiceover, alignment, measured captions, save; 0 console errors |
+
+## Real vs mocked
+
+| Real | Mocked |
+|---|---|
+| PostgreSQL with all migrations, RLS, grants, RPCs, triggers and storage policies (storage shim) | Supabase Storage (`LocalMediaStore` on disk; storage RLS on the shim's `storage.objects`) |
+| ffmpeg/ffprobe for probing, proxies, thumbnails, full renders and loudness measurement | Whisper (mock transcriber returning word timestamps; HTTP request shape unit-tested) |
+| Chromium rendering the editor and preview with the app's Tailwind CSS | Server actions in the browser harness (stubbed save) |
+
+## New test files
+
+| File | Tests | Covers |
+|---|---:|---|
+| `tests/db/video.test.ts` | 16 | Rights, mime-per-kind and 1 GB checks; **plan quota (54000)** and failed uploads not counted; reserved-path storage RLS; read-only server fields; cross-tenant upload/read/complete blocked; project creation with script snapshot and version 1; **optimistic concurrency (40001)**; asset links and **blocked deletion of used media**; foreign, unready, malformed and over-long timelines rejected; restore plus append-only history even for `service_role`; title-only updates and archive; **render pricing by duration, free drafts, one active render, refund on cancel**; idempotency and **full rollback without credits**; draft hourly limit; **worker RPCs service-role only, refund exactly once**; ready gating (status, checks, timeline version) and reset on edit; render feedback isolation; voiceover take kinds; isolation of all 7 tables and RPCs |
+| `tests/db/video-worker.test.ts` | 10 | **Real ffmpeg**: video probe/thumbnail/H.264 proxy; image normalisation and AAC audio proxy; disguised file rejected without retry or execution; voiceover word timestamps plus 100% script match; "unavailable" without a transcriber; deferral while a recording is processing (no attempt used); **draft render** 540×960 with checks, MP4 and SRT stored, all steps done; **final render** 1080×1920, 30 fps, loudness −16.5…−11.5 LUFS, checks pass, mark ready, credits charged once; **cancel mid-render → refund**; missing media → failed + refund |
+| `tests/unit/video-engine.test.ts` | 19 | Timeline build and scaling to 3 min; semantic validation; script merge diff keeping media and user text; voiceover alignment; script deviation; **ASS escaping (override tags, braces, control chars)**; estimated vs measured captions; karaoke tags; SRT; text overflow; render plan (xfade offsets, ducking, loudnorm, zoompan, ASS, paths as argv); draft settings and black fill; **no user text in the filter graph**; filter path escaping; checks (pass, draft/missing media fail, loudness/peak/resolution); voice gaps; pricing; upload classification and magic bytes; ebur128 parsing; Whisper word timestamps |
+
+## Defects found and fixed during Phase 4
+
+- The ASS escape regex was corrupted by a tooling conversion of `\u` escapes into literal characters (TypeScript compile error). Rewritten with ASCII escapes, and covered by a test.
+- The voiceover alignment first assumed the first spoken scene starts at 0. It now uses absolute time and handles silent intro scenes; covered by a test.
+- The highlight caption style showed whole lines in the highlight colour when no word timing existed. Such lines now use the base colour.
+
+## Not covered (blockers)
+
+- Live Supabase Storage uploads from the browser and signed-URL playback (no live project in this environment).
+- Live Whisper transcription and microphone recording in a real browser session.
+- Pages were compiled and type-checked; the editor was exercised in Chromium through a harness, not through the full app with a live backend.

@@ -21,7 +21,10 @@ import type { TranscriptionProvider } from "@/server/analysis/transcription/type
 import { buildAss, toSrt } from "./captions";
 import { evaluateChecks, voiceGaps, type RenderStats } from "./checks";
 import { buildRenderPlan, type LocalAsset } from "./compose";
+import { VIDEO_JOB_STEPS } from "./steps";
 import { sceneStarts, scriptDeviation, Timeline, timelineAssetIds, type Word } from "./timeline";
+
+export { VIDEO_JOB_STEPS };
 
 /**
  * Video Studio worker jobs: asset processing, voiceover transcription and
@@ -52,25 +55,7 @@ export interface VideoWorkerDeps {
 
 export type VideoJobOutcome = "succeeded" | "failed" | "retry_scheduled" | "canceled" | "deferred";
 
-export const VIDEO_JOB_STEPS = {
-  asset: [
-    { id: "validate", label: "Validate file" },
-    { id: "probe", label: "Read media details" },
-    { id: "derivatives", label: "Create preview and thumbnail" },
-  ],
-  voiceover: [
-    { id: "prepare", label: "Prepare recording" },
-    { id: "transcribe", label: "Transcribe voiceover" },
-    { id: "compare", label: "Compare with script" },
-  ],
-  render: [
-    { id: "prepare", label: "Prepare media" },
-    { id: "compose", label: "Build timeline" },
-    { id: "encode", label: "Encode video" },
-    { id: "verify", label: "Measure and check output" },
-    { id: "upload", label: "Save render" },
-  ],
-} as const;
+
 
 type StepState = { step: string; status: "pending" | "running" | "done" | "skipped" | "failed"; started_at?: string; finished_at?: string; detail?: string };
 

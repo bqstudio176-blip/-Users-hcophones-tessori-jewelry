@@ -64,7 +64,7 @@ The **Creative Orchestrator** is not a model. It is the code that sequences agen
 |---|---|---|
 | `ANTHROPIC_API_KEY` | — | Required. Without it, every AI action returns `not_configured` and nothing is charged. |
 | `CREATIVE_MODEL` | `claude-opus-5-5` | Model for the Script Lab agents |
-| `CREATIVE_EFFORT` | `high` | `output_config.effort` |
+| `CREATIVE_EFFORT` | `medium` (`.env.example` sets `high`) | `output_config.effort`: `low`, `medium` or `high` |
 | `ANTHROPIC_DISABLE_FALLBACKS` | unset | Set to `1` to disable server-side refusal fallbacks |
 
 To add a provider, implement `AnalysisModel` and return it from `creativeModel()` in `src/server/actions/creative.ts`. Nothing else changes.

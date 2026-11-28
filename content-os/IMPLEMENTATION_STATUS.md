@@ -258,3 +258,69 @@ Phase 2 acceptance criteria 7 (live transcription) and 9 (live AI analysis) rema
 8. Submit "not useful · too long" feedback twice, then confirm the suggestion appears on the Feedback page; add it, approve it as owner, and regenerate.
 9. Remove `ANTHROPIC_API_KEY`: AI actions show "not configured" and no credits move.
 10. Check `/script-lab/usage`: runs, tokens and credits match the ledger.
+
+---
+
+# Phase 4: Video Studio
+
+_Last updated: 2026-11-28 · Branch: `claude/content-os-phase-1-xyfdxl` · Scope: `docs/PHASE_4_VIDEO_STUDIO_PROPOSAL.md`, approved with decisions D1–D5 as recommended (no AI voice; final render 3 credits up to 60 s + 1 per extra 30 s, drafts free at 10/hour; quotas 2/25/150 GB with 1 GB and 10 min per asset; 3-minute maximum; renders on the existing worker, CPU only)._
+
+## Acceptance criteria
+
+| # | Criterion | Status | Evidence |
+|---|---|---|---|
+| 1 | Upload own video, image and audio; probed, thumbnailed, proxied | ✅ / 🟡 | Real ffmpeg worker tests (video, image, audio, disguised file rejected); quota and rights tests. Browser → live Supabase Storage upload not exercised. |
+| 2 | Project from a script with scenes pre-populated and the version snapshotted | ✅ | `create_video_project` test; `buildInitialTimeline` unit tests |
+| 3 | Assign and trim media per scene, fit, transition, on-screen text, reorder | ✅ | Editor harness in Chromium (assign, edit, save); render tests with fill, fit-blur, Ken Burns, crossfade |
+| 4 | Record or upload a voiceover; transcribed and compared with the script | ✅ / 🟡 | Worker test with mock transcriber (words + deviation); Whisper word-timestamp request unit test. Live Whisper and browser microphone not exercised. |
+| 5 | Captions timed from the voiceover (or estimated and labelled), editable, burned in, SRT | ✅ | Unit tests (word timing, estimation, ASS escaping, SRT); render test burns captions and uploads SRT; harness generated measured captions |
+| 6 | Music with automatic ducking | ✅ | Render plan unit test (`sidechaincompress`); real render with music + voice |
+| 7 | Draft and final renders on the worker with progress, cancel, retry, correct credits | ✅ | Worker tests: draft, final, cancel (refund), failure (refund once); DB tests for pricing, idempotency, rollback, draft limit |
+| 8 | Final output meets Reels specs, verified on the output | ✅ | Final render measured 1080×1920, H.264/AAC, 30 fps, ≈ −14 LUFS |
+| 9 | Deterministic pre-publish checks; "ready" gated | ✅ | `evaluateChecks` unit tests; `mark_video_ready` DB test; end-to-end mark ready after a final render |
+| 10 | Versioned, restorable timelines; renders record their version | ✅ | DB tests (restore, append-only, conflict `40001`, render snapshot) |
+| 11 | Workspace isolation | ✅ | DB tests across all 7 tables and all RPCs; foreign assets rejected in timelines |
+| 12 | Critical tests pass, including real ffmpeg renders | ✅ | 405/405 |
+
+## Features implemented
+
+- **Media library:** multi-file upload with rights confirmation, magic-byte checks, quota display, filters, detail with preview and technical metadata, rename, tags, "used in", and deletion blocked while in use.
+- **Video projects:** from any non-archived script (approved first), three formats, rename, archive, delete (not while rendering), and "Update from script" with a reviewed diff that keeps media and user text edits.
+- **Editor:** scene list (reorder, duplicate, split, delete, add), media picker with thumbnails, trim, fit and focal point, Ken Burns, clip audio, duration, crossfade, on-screen text (5 styles, 3 positions); voiceover panel (whole video or per scene, offset, volume, fit durations to measured words); music (start, volume, fades, ducking); captions (5 styles, 3 positions, burn-in, generate, edit, delete, SRT download); live preview from proxies with safe-zone guides; validation before saving; versioned saves with conflict detection; unsaved-changes guard.
+- **Voiceover:** browser recording (MediaRecorder) with teleprompter for the whole script or a scene, upload alternative, takes with transcription status, % match and skipped/added words, apply to timeline, delete unused takes.
+- **Render & checks:** free watermarked drafts and paid finals, step progress with auto-refresh, cancel, downloads (MP4, SRT), measured stats, check list, "Mark ready to publish", feedback per render.
+- **Versions:** every create, save-as-version, render, restore and script update; restore with a prior snapshot.
+- **Integration:** navigation enabled; "Make video" in Script Lab; Videos tile on the dashboard; billing copy; render credits in the ledger.
+
+## Not implemented / limitations
+
+- AI voice (TTS): out of scope by decision D1.
+- No encoder percentage. Progress is shown per step.
+- The preview is approximate (HTML overlays over proxies). Fonts, blur and timing in the final render can differ slightly; the UI says so.
+- Fit-blur in the preview uses the thumbnail as the blurred background; the render blurs the actual clip.
+- A single track: no free-form multi-track editing (out of scope).
+- Publishing to Instagram is Phase 5.
+
+## Outstanding dependencies (Phase 4)
+
+| Dependency | Needed for | Owner action |
+|---|---|---|
+| Apply migrations 1200–1300 | Video Studio | `supabase db push` |
+| Raise the Supabase Storage global upload limit to ≥ 1 GB | Large uploads | Supabase dashboard → Storage settings (the Free tier caps at 50 MB) |
+| Redeploy the worker image (libass fonts) with enough CPU | Asset processing and renders | Build `worker/Dockerfile`; optionally a dedicated `WORKER_QUEUES=video` process |
+| `OPENAI_API_KEY` on the worker | Measured caption timing | Optional; without it captions use estimated timing |
+| Live verification | Criteria 1 and 4, plus Phase 2–3 items | Checklist below |
+
+## Phase 4 manual acceptance checklist
+
+1. Upload a phone clip (MOV, rotated), a PNG and an MP3. Each becomes "ready" with a thumbnail and preview; the rotated clip shows the correct orientation.
+2. Try uploading a `.sh` renamed to `.mp4`: it is rejected (browser, or the worker if the browser check is bypassed).
+3. Script Lab → script → **Make video** → create (9:16). The scenes and on-screen text match the script.
+4. Assign media to every scene, add a crossfade, set focus points and text. Save. Open the same video in a second tab, change something, save in the first tab: a conflict is reported and nothing is overwritten.
+5. Voiceover tab: record the whole script with the teleprompter. The take shows "Transcribed" with a % match. Use it in the timeline, then **Fit scene durations to the voice** and **Generate captions** (timing says "measured"). Save.
+6. Add music with ducking. Render a **draft**: it costs no credits, is watermarked and 540×960, and the checks show "Final render: fail".
+7. Render a **final**: credits drop by 3 for ≤ 60 s; output 1080×1920, ≈ −14 LUFS; download the MP4 and SRT. **Mark ready to publish**.
+8. Edit the timeline and save: status returns to Draft and the old render can no longer be marked ready.
+9. Start a final render and cancel it while running: it becomes Canceled and credits are refunded.
+10. Edit the script in Script Lab: the video shows "script changed". Review **Update from script** and apply; media is kept.
+11. As another workspace's user, open the video URL: not found.

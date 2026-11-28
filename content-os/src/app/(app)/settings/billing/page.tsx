@@ -105,7 +105,7 @@ export default async function BillingPage() {
               </table>
             </div>
           )}
-          <Alert tone="info" className="mt-4">Credits are consumed by video analyses (Analyze) and by Script Lab AI agents. AI agent runs are charged only when they return validated output — failed or rejected runs are free. See Script Lab → AI usage for a per-run breakdown.</Alert>
+          <Alert tone="info" className="mt-4">Credits are consumed by video analyses (Analyze), Script Lab AI agents and Video Studio final renders (3 credits up to 60 s, +1 per extra 30 s; drafts are free). AI agent runs are charged only when they return validated output, and renders are refunded automatically if they fail or are cancelled. See Script Lab → AI usage for a per-run breakdown.</Alert>
         </CardContent>
       </Card>
     </>

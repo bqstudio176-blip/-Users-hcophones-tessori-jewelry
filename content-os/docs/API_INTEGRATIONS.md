@@ -67,10 +67,18 @@ Then add it to `DISCOVERY_PROVIDERS` in `registry.ts` and insert a `discovery_so
 
 - **Used by:** the Research, Strategy, Hook, Script, Script edit and Quality agents (`src/server/creative/orchestrator.ts`), through the shared `AnalysisModel` abstraction (`src/server/analysis/ai/claude.ts`).
 - **Endpoint:** Messages API via `@anthropic-ai/sdk` `client.beta.messages.parse`, with Zod structured outputs (`betaZodOutputFormat`), `output_config.effort`, and server-side refusal fallbacks (beta `server-side-fallback-2026-07-01`).
-- **Configuration:** `ANTHROPIC_API_KEY` (required), `CREATIVE_MODEL` (default `claude-opus-5-5`), `CREATIVE_EFFORT` (default `high`), `ANTHROPIC_DISABLE_FALLBACKS`.
+- **Configuration:** `ANTHROPIC_API_KEY` (required), `CREATIVE_MODEL` (default `claude-opus-5-5`), `CREATIVE_EFFORT` (default `medium`; `.env.example` sets `high`), `ANTHROPIC_DISABLE_FALLBACKS`.
 - **Calls run from:** server actions (the web process). The Script Lab route segment sets `maxDuration = 300`.
 - **Data sent:** the strategy brief, selected rules, approved preferences, reference summaries and transcript excerpts (≤ 600 characters each), and script scenes for edit and quality runs. All user and third-party text is wrapped as untrusted data. No credentials or personal account data are sent.
 - **Costs:** tokens are reported by the API, and cost is estimated from the model price table. Workspace credits per run: research 1, strategy 2, hook 2, script 4, edit 1, quality 1, charged only on validated success.
 - **Limits:** per-plan per-minute, hourly and daily limits (`ai_usage_limits`) are enforced before every call.
 - **Failure handling:** an invalid output gets one corrective retry. Refusals and provider errors are recorded and not charged.
 - **Status in this build:** not exercised live; no key is available in the build environment. Covered by the mock-model end-to-end tests.
+
+## Video Studio (Phase 4)
+
+- **OpenAI Whisper:** voiceover takes are transcribed with `timestamp_granularities[] = segment, word` (`OpenAIWhisperProvider.transcribe(..., { wordTimestamps: true })`). Word timings drive caption timing and scene alignment. Without `OPENAI_API_KEY`, takes are marked "not transcribed" and captions fall back to estimated timing. Each transcription is billed by OpenAI per audio minute.
+- **ffmpeg / ffprobe (worker):** probing, proxies (H.264 540p / AAC), thumbnails, rendering (libx264, AAC, `loudnorm` −14 LUFS, `sidechaincompress` ducking, `xfade`, `zoompan`, libass `ass` filter) and measurement (`ebur128`). Requires an ffmpeg build with libass and a font (the worker image installs `fonts-dejavu-core`).
+- **Supabase Storage:** uploads go straight from the browser to reserved paths. The project's global upload size limit must be at least 1 GB to accept the largest assets (the Free tier caps it at 50 MB).
+- **No external media sources:** no stock libraries, no music catalogue, no downloads from URLs.
+- **Status in this build:** ffmpeg rendering was exercised for real in tests and in a worker smoke run. Whisper was exercised only with mocked HTTP; live Supabase Storage was not exercised.

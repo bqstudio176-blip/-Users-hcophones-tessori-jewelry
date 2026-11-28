@@ -60,7 +60,7 @@ export default async function ScriptEditorPage({ params, searchParams }: { param
       <PageHeader
         title={script.title}
         description={<>{labelOf(SCRIPT_FORMATS, script.format)} · target {script.target_duration_seconds}s · version {script.current_version} · {project && <Link href={`/script-lab/projects/${project.id}`} className="text-accent">{project.name}</Link>}</>}
-        actions={<div className="flex gap-2"><ButtonLink href={`/script-lab/scripts/${id}/versions`} variant="outline" size="sm">Versions</ButtonLink><ButtonLink href={`/script-lab/scripts/${id}/quality`} variant="outline" size="sm">Quality</ButtonLink></div>}
+        actions={<div className="flex gap-2"><ButtonLink href={`/script-lab/scripts/${id}/versions`} variant="outline" size="sm">Versions</ButtonLink><ButtonLink href={`/script-lab/scripts/${id}/quality`} variant="outline" size="sm">Quality</ButtonLink><ButtonLink href={`/video-studio?script=${id}`} size="sm">Make video</ButtonLink></div>}
       />
       {sp.generated && <Alert tone="success" className="mb-4">Script generated (version 1). Review and edit the scenes below.</Alert>}
       {sp.restored && <Alert tone="success" className="mb-4">Version {sp.restored} restored. The previous content was saved as a version first.</Alert>}

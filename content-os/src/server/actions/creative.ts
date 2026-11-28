@@ -444,7 +444,7 @@ export async function setRuleOverride(fd: FormData): Promise<void> {
 export async function submitFeedback(_prev: ActionState, fd: FormData): Promise<ActionState> {
   const ctx = await getWorkspaceContext();
   const parsed = z.object({
-    target_type: z.enum(["idea", "hook", "script", "recommendation", "quality_report", "strategy"]),
+    target_type: z.enum(["idea", "hook", "script", "recommendation", "quality_report", "strategy", "video_render"]),
     target_id: uuidSchema,
     target_version: z.union([z.coerce.number().int().min(0), z.literal("")]).transform((v) => (v === "" ? null : v)),
     rating: z.enum(["useful", "not_useful"]),
